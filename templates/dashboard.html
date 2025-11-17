@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="text-2xl font-bold mb-4">Dashboard Controle de Água</h1>
+
+<form method="get" class="mb-4 flex gap-4">
+    <input name="q" placeholder="Busca" value="{{ args.get('q','') }}" class="border px-3 py-1 rounded">
+    <input name="estado" placeholder="Estado" value="{{ args.get('estado','') }}" class="border px-3 py-1 rounded">
+    <input name="regional" placeholder="Regional" value="{{ args.get('regional','') }}" class="border px-3 py-1 rounded">
+    <button class="bg-black text-white px-4 py-1 rounded">Filtrar</button>
+</form>
+
+<div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-white shadow p-4">
+        <p>Total registros</p>
+        <h2 class="text-xl font-bold">{{ kpis.total }}</h2>
+    </div>
+
+    <div class="bg-white shadow p-4">
+        <p>Checklist OK</p>
+        <h2 class="text-xl font-bold">{{ kpis.ok }}</h2>
+    </div>
+
+    <div class="bg-white shadow p-4">
+        <p>Micro + NA</p>
+        <h2 class="text-xl font-bold">{{ kpis.micro_na }}</h2>
+    </div>
+</div>
+
+<div class="bg-white shadow overflow-x-auto">
+<table class="min-w-full text-sm">
+    <thead>
+        <tr>
+            {% for col in columns %}
+            <th class="border px-3 py-2">{{ col }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in df %}
+        <tr class="border">
+            {% for col in columns %}
+            <td class="px-3 py-2">{{ row[col] }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% endblock %}

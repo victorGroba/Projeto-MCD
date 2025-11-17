@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório do Sistema de Controle de Água - McDonald's</title>
+<style>
+    body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        margin: 40px;
+        color: #222;
+        line-height: 1.6;
+    }
+    h1, h2, h3 {
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #111;
+    }
+    h1 {
+        margin-top: 0;
+        font-size: 28px;
+    }
+    h2 {
+        margin-top: 28px;
+        font-size: 22px;
+    }
+    p {
+        margin-bottom: 12px;
+        text-align: justify;
+    }
+    ul {
+        margin-bottom: 18px;
+    }
+    .section {
+        margin-bottom: 32px;
+    }
+    .header {
+        border-bottom: 2px solid #444;
+        padding-bottom: 10px;
+        margin-bottom: 30px;
+    }
+    .footer {
+        margin-top: 50px;
+        border-top: 1px solid #ccc;
+        padding-top: 10px;
+        font-size: 14px;
+        text-align: center;
+        color: #666;
+    }
+
+    /* Melhor aparência ao imprimir */
+    @media print {
+        body {
+            margin: 20mm;
+        }
+        .footer {
+            position: fixed;
+            bottom: 10px;
+            width: 100%;
+        }
+    }
+</style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Sistema de Controle de Água – McDonald’s</h1>
+    <p><strong>Relatório Técnico de Desenvolvimento</strong></p>
+</div>
+
+
+<div class="section">
+    <h2>1. Objetivo Geral</h2>
+    <p>
+        Este projeto tem como finalidade modernizar o processo de acompanhamento
+        da qualidade da água nas unidades administradas, substituindo o uso da
+        planilha manual por uma plataforma web estruturada, automatizada e de
+        fácil interpretação tanto para o time operacional quanto para o cliente
+        McDonald's.
+    </p>
+</div>
+
+
+<div class="section">
+    <h2>2. Objetivos Específicos</h2>
+
+    <h3>Automação de Dados</h3>
+    <p>
+        O sistema terá capacidade de ler diariamente a planilha atualizada, interpretar
+        as informações e disponibilizar os resultados de forma organizada, tornando o
+        processo mais rápido e com menor risco de erros manuais.
+    </p>
+
+    <h3>Dashboards Inteligentes</h3>
+    <p>
+        Serão disponibilizados indicadores operacionais, pendências, análises de microbiologia,
+        desempenho por regional, além de rankings e comparativos anuais. A apresentação será clara,
+        objetiva e com foco em facilitar a tomada de decisão.
+    </p>
+
+    <h3>Upload Diário</h3>
+    <p>
+        A equipe interna poderá realizar o upload da planilha diretamente pelo sistema.
+        A partir disso, os gráficos e relatórios serão atualizados automaticamente.
+    </p>
+
+    <h3>Área do Cliente</h3>
+    <p>
+        O cliente McDonald's terá acesso restrito a um painel exclusivo, permitindo consultar
+        pendências, tendências, gráficos e indicadores operacionais de forma rápida e organizada.
+    </p>
+
+    <h3>Área Administrativa</h3>
+    <p>
+        O ambiente administrativo permitirá o gerenciamento de usuários, permissões, auditoria
+        de uploads e demais configurações gerais do sistema.
+    </p>
+</div>
+
+
+<div class="section">
+    <h2>3. Arquitetura do Sistema</h2>
+
+    <h3>Backend (API)</h3>
+    <p>
+        Desenvolvido em Python, utilizando Flask e Pandas, será responsável pela leitura das planilhas,
+        tratamento das informações e disponibilização dos dados por meio de endpoints seguros.
+    </p>
+
+    <h3>Frontend</h3>
+    <p>
+        Construído com React e Vite, com utilização de TailwindCSS para componenteização visual.
+        A interface será responsiva, com telas separadas para cliente e operação.
+    </p>
+
+    <h3>Segurança</h3>
+    <p>
+        O acesso ao sistema será controlado via login, com sessões autenticadas e permissões distintas
+        para administradores, operação e cliente final.
+    </p>
+</div>
+
+
+<div class="section">
+    <h2>4. Benefícios Esperados</h2>
+    <ul>
+        <li>Informações mais claras e precisas para o cliente.</li>
+        <li>Automação da leitura dos dados e diminuição de retrabalho.</li>
+        <li>Melhor visualização das pendências e pontos críticos.</li>
+        <li>Maior profissionalismo na apresentação de resultados.</li>
+        <li>Tomada de decisão mais rápida e baseada em dados.</li>
+        <li>Redução de erros provenientes de manipulação manual de planilhas.</li>
+    </ul>
+</div>
+
+
+<div class="section">
+    <h2>5. Status Atual</h2>
+    <p>
+        A estrutura inicial do sistema já está em andamento, com a base do frontend configurada,
+        a lógica de leitura da planilha estruturada e a definição completa das tabelas da aba
+        “gráfico-pendência”. Próximas etapas incluem a finalização do ambiente visual, integração
+        com a API e montagem dos dashboards.
+    </p>
+</div>
+
+
+<div class="section">
+    <h2>6. Próximas Etapas</h2>
+    <ul>
+        <li>Configuração final do ambiente de frontend e estilização.</li>
+        <li>Integração completa do backend com os dashboards.</li>
+        <li>Criação dos gráficos dinâmicos.</li>
+        <li>Implementação do ranking e heatmap por regional.</li>
+        <li>Desenvolvimento da área administrativa.</li>
+        <li>Homologação interna e ajustes com o cliente.</li>
+    </ul>
+</div>
+
+
+<div class="footer">
+    Laboratório Mattos e Mattos – Sistema de Controle de Água
+</div>
+
+</body>
+</html>

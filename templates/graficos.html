@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="bg-gray-900 text-gray-200">
+<head>
+    <meta charset="UTF-8">
+    <title>Gráficos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="min-h-screen bg-gray-900 px-8 py-6">
+
+    <h1 class="text-3xl font-bold text-white mb-6">Dashboard Analítico</h1>
+
+    <!-- GRID PRINCIPAL -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+        <!-- GRÁFICO 1 -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-xl border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4">Pendência Restaurante Anual</h2>
+            <canvas id="graf1"></canvas>
+        </div>
+
+        <!-- GRÁFICO 2 -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-xl border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4">Pendência Restaurante por Regional</h2>
+            <canvas id="graf2"></canvas>
+        </div>
+
+        <!-- GRÁFICO 3 (BACKROOM) -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-xl border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4">Backroom</h2>
+            <canvas id="graf3"></canvas>
+        </div>
+
+        <!-- GRÁFICO 4 (GELO) -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-xl border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4">Gelo</h2>
+            <canvas id="graf4"></canvas>
+        </div>
+
+        <!-- GRÁFICO 5 (Pendências de Gelo) -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-xl border border-gray-700 col-span-1 lg:col-span-2">
+            <h2 class="text-xl font-semibold mb-4">Pendências de Gelo</h2>
+            <canvas id="graf5"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const data = {{ data|tojson }};
+
+        /* ============================
+             GRÁFICO 1 - ANUAL
+        ============================ */
+        new Chart(document.getElementById("graf1"), {
+            type: "line",
+            data: {
+                labels: data.restaurante_anual.meses,
+                datasets: Object.keys(data.restaurante_anual.valores).map((ano, idx) => ({
+                    label: ano,
+                    data: data.restaurante_anual.valores[ano],
+                    borderWidth: 2,
+                    tension: 0.3,
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: "white" } } },
+                scales: {
+                    x: { ticks: { color: "white" } },
+                    y: { ticks: { color: "white" } }
+                }
+            }
+        });
+
+        /* ============================
+            GRÁFICO 2 - REGIONAL
+        ============================ */
+        new Chart(document.getElementById("graf2"), {
+            type: "bar",
+            data: {
+                labels: data.restaurante_regional.meses,
+                datasets: data.restaurante_regional.regionais.map((reg, idx) => ({
+                    label: reg,
+                    data: data.restaurante_regional.valores[reg],
+                    borderWidth: 1
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: "white" } } },
+                scales: {
+                    x: { ticks: { color: "white" } },
+                    y: { ticks: { color: "white" } }
+                }
+            }
+        });
+
+        /* ============================
+            GRÁFICO 3 - BACKROOM
+        ============================ */
+        new Chart(document.getElementById("graf3"), {
+            type: "bar",
+            data: {
+                labels: data.backroom.categorias,
+                datasets: data.backroom.regionais.map(reg => ({
+                    label: reg,
+                    data: data.backroom.valores[reg],
+                    borderWidth: 1
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: "white" } } },
+                scales: {
+                    x: { ticks: { color: "white" } },
+                    y: { ticks: { color: "white" } }
+                }
+            }
+        });
+
+        /* ============================
+            GRÁFICO 4 - GELO
+        ============================ */
+        new Chart(document.getElementById("graf4"), {
+            type: "bar",
+            data: {
+                labels: data.gelo.categorias,
+                datasets: data.gelo.regionais.map(reg => ({
+                    label: reg,
+                    data: data.gelo.valores[reg],
+                    borderWidth: 1
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: "white" } } },
+                scales: {
+                    x: { ticks: { color: "white" } },
+                    y: { ticks: { color: "white" } }
+                }
+            }
+        });
+
+        /* ============================
+            GRÁFICO 5 - PENDÊNCIAS GELO
+        ============================ */
+        new Chart(document.getElementById("graf5"), {
+            type: "bar",
+            data: {
+                labels: data.pendencias_gelo.regionais,
+                datasets: data.pendencias_gelo.categorias.map(cat => ({
+                    label: cat,
+                    data: data.pendencias_gelo.valores[cat],
+                    borderWidth: 1
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: "white" } } },
+                scales: {
+                    x: { ticks: { color: "white" } },
+                    y: { ticks: { color: "white" } }
+                }
+            }
+        });
+    </script>
+
+</body>
+</html>
