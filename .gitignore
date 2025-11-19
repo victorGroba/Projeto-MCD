@@ -13,3 +13,5 @@ __pycache__/
 # Arquivos temporários
 .DS_Store
 Thumbs.db
+
+*.zip
