@@ -1,6 +1,7 @@
 from flask import Flask
+from flask_cors import CORS  # <--- 1. FALTAVA ESSA IMPORTAÇÃO
 from mcdagua.config import load_config
-from mcdagua.extensions import cache, scheduler, jwt  # <--- ADICIONADO O JWT AQUI
+from mcdagua.extensions import cache, scheduler, jwt
 from mcdagua.routes.ui import ui_bp
 from mcdagua.routes.api import api_bp
 from mcdagua.routes.upload import upload_bp
@@ -13,9 +14,14 @@ def create_app():
     app.secret_key = "super-secure-key"
 
     load_config(app)
+    
+    # <--- 2. FALTAVA ATIVAR AQUI
+    # Permite que o React (porta 5173) fale com o Flask (porta 8000)
+    CORS(app, resources={r"/*": {"origins": "*"}}) 
+
     cache.init_app(app)
     scheduler.start()
-    jwt.init_app(app)  # <--- INICIALIZAÇÃO DO JWT ADICIONADA AQUI
+    jwt.init_app(app)
 
     auth_bp.server = app
     app.register_blueprint(auth_bp)
