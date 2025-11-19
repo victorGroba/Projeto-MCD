@@ -5,10 +5,13 @@ import { api } from "../api/api";
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-  // Ao carregar a página, verifica se já existe um token salvo no disco
+  // CORREÇÃO AQUI: Recuperamos o token real do disco ao iniciar
   const [user, setUser] = useState(() => {
-    return auth.isAuthenticated() ? { logged: true } : null;
+    const token = auth.getToken(); // Pega a string do token
+    // Se tiver token, recria o objeto de usuário completo
+    return token ? { logged: true, token: token } : null;
   });
+  
   const [loading, setLoading] = useState(false);
 
   async function login(username, password) {
@@ -23,10 +26,10 @@ export function AuthProvider({ children }) {
       if (access_token) {
         console.log("✅ [AuthContext] Token recebido! Salvando...");
         
-        // 3. SALVA NO DISCO (Isso faltava no seu código antigo!)
+        // 3. SALVA NO DISCO
         auth.login(access_token);
         
-        // 4. Atualiza o estado do React para liberar o acesso imediato
+        // 4. Atualiza o estado do React (incluindo o token!)
         setUser({ username, role, token: access_token });
         
         return { success: true };
@@ -52,13 +55,13 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{ 
-  user, 
-  token: user?.token,
-  login, 
-  logout, 
-  loading, 
-  isAuthenticated: !!user 
-}}>
+      user, 
+      token: user?.token, // Agora isso sempre terá valor se estiver logado
+      login, 
+      logout, 
+      loading, 
+      isAuthenticated: !!user 
+    }}>
       {children}
     </AuthContext.Provider>
   );

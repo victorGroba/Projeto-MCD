@@ -2,141 +2,140 @@ import pandas as pd
 from flask import current_app
 from mcdagua.extensions import cache
 
-# =========================================================
-#  NOVA CLASSE: Leitura dos 5 blocos da aba GRÁFICO PENDENCIA
-# =========================================================
-
 class GraficoPendenciaLoader:
 
     def __init__(self, excel_path: str):
         self.path = excel_path
+        # Lê sem cabeçalho para usarmos índices numéricos fixos
         self.df = pd.read_excel(self.path, sheet_name="GRÁFICO PENDENCIA", header=None)
 
+    def _ler_bloco_dinamico(self, linha_inicio, col_inicio, num_cols):
+        """Lê linhas até encontrar vazio na coluna de rótulo."""
+        dados = []
+        linha = linha_inicio
+        while linha < len(self.df) and pd.notna(self.df.iloc[linha, col_inicio]):
+            rotulo = self.df.iloc[linha, col_inicio]
+            valores = list(self.df.iloc[linha, col_inicio+1 : col_inicio+1+num_cols])
+            dados.append([rotulo] + valores)
+            linha += 1
+        return dados
+
     # -------------------------------------------------------
-    # BLOCO 1 — Pendência Restaurante Anual
+    # 1. PENDÊNCIA ANUAL (NÃO Transpor - Eixo X deve ser Mês)
     # -------------------------------------------------------
     def load_pendencia_anual(self):
-        anos = [
-            int(self.df.iloc[2, 8]),   # 2023
-            int(self.df.iloc[2, 9]),   # 2024
-            int(self.df.iloc[2, 10])   # 2025
-        ]
-
-        dados = []
-        linha = 3  # primeira linha dos meses
-
-        while pd.notna(self.df.iloc[linha, 7]):
-            mes = self.df.iloc[linha, 7]
-            valores = [
-                self.df.iloc[linha, 8],
-                self.df.iloc[linha, 9],
-                self.df.iloc[linha, 10]
-            ]
-            dados.append([mes] + valores)
-            linha += 1
-
-        return pd.DataFrame(dados, columns=["mes"] + [str(a) for a in anos])
+        anos = list(self.df.iloc[2, 8:11]) 
+        cols = ["mes"] + [str(a) for a in anos]
+        dados = self._ler_bloco_dinamico(3, 7, 3)
+        return pd.DataFrame(dados, columns=cols)
 
     # -------------------------------------------------------
-    # BLOCO 2 — Pendência por Regional
+    # 2. PENDÊNCIA REGIONAL (TRANSPOR - Eixo X deve ser Regional)
     # -------------------------------------------------------
     def load_pendencia_regional(self):
-        start = 22
-        col_mes = 7
-        regionais = list(self.df.iloc[21, 8:12])  # BRA, RSOU, SAO1, SAO2
+        # Lê cabeçalhos (Regionais)
+        regionais = []
+        c = 8
+        while c < len(self.df.columns) and pd.notna(self.df.iloc[21, c]):
+            regionais.append(self.df.iloc[21, c])
+            c += 1
+        
+        # Lê dados (Linhas = Meses)
+        dados = self._ler_bloco_dinamico(22, 7, len(regionais))
+        df = pd.DataFrame(dados, columns=["mes"] + [str(r) for r in regionais])
 
-        dados = []
-        linha = start
-
-        while pd.notna(self.df.iloc[linha, col_mes]):
-            mes = self.df.iloc[linha, col_mes]
-            valores = list(self.df.iloc[linha, 8:12])
-            dados.append([mes] + valores)
-            linha += 1
-
-        return pd.DataFrame(dados, columns=["mes"] + regionais)
+        # ROTACIONAR A TABELA
+        # Antes: Linhas=Jan,Fev... | Colunas=BRA,RSOU...
+        # Depois: Linhas=BRA,RSOU... | Colunas=Jan,Fev... (Igual ao gráfico do Excel)
+        df = df.set_index("mes").transpose().reset_index()
+        df.columns.values[0] = "regional" # Renomeia a nova coluna de índice
+        
+        return df
 
     # -------------------------------------------------------
-    # BLOCO 3 — Backroom
+    # 3. BACKROOM (TRANSPOR - Eixo X deve ser Status)
     # -------------------------------------------------------
     def load_backroom(self):
-        start = 38
-        regionais = list(self.df.iloc[start:start+4, 7])
-        colunas = list(self.df.iloc[start-1, 8:12])
+        # Lê cabeçalhos (Status: Programado, Insatisfatório...)
+        categorias = []
+        c = 8
+        while c < len(self.df.columns) and pd.notna(self.df.iloc[37, c]):
+            categorias.append(self.df.iloc[37, c])
+            c += 1
+            
+        # Lê dados (Linhas = Regionais)
+        dados = self._ler_bloco_dinamico(38, 7, len(categorias))
+        df = pd.DataFrame(dados, columns=["regional"] + [str(cat) for cat in categorias])
 
-        dados = []
-        for i in range(len(regionais)):
-            valores = list(self.df.iloc[start+i, 8:12])
-            dados.append([regionais[i]] + valores)
+        # ROTACIONAR A TABELA
+        # Antes: Linhas=Regionais | Colunas=Status
+        # Depois: Linhas=Status | Colunas=Regionais
+        df = df.set_index("regional").transpose().reset_index()
+        df.columns.values[0] = "status"
 
-        return pd.DataFrame(dados, columns=["regional"] + colunas)
+        return df
 
     # -------------------------------------------------------
-    # BLOCO 4 — Gelo
+    # 4. GELO (TRANSPOR - Eixo X deve ser Status)
     # -------------------------------------------------------
     def load_gelo(self):
-        start = 50
-        regionais = list(self.df.iloc[start:start+4, 7])
-        colunas = list(self.df.iloc[start-1, 8:12])
+        categorias = []
+        c = 8
+        while c < len(self.df.columns) and pd.notna(self.df.iloc[49, c]):
+            categorias.append(self.df.iloc[49, c])
+            c += 1
+            
+        dados = self._ler_bloco_dinamico(50, 7, len(categorias))
+        df = pd.DataFrame(dados, columns=["regional"] + [str(cat) for cat in categorias])
 
-        dados = []
-        for i in range(len(regionais)):
-            valores = list(self.df.iloc[start+i, 8:12])
-            dados.append([regionais[i]] + valores)
+        # Rotacionar
+        df = df.set_index("regional").transpose().reset_index()
+        df.columns.values[0] = "status"
 
-        return pd.DataFrame(dados, columns=["regional"] + colunas)
+        return df
 
     # -------------------------------------------------------
-    # BLOCO 5 — Pendências de Gelo
+    # 5. PENDÊNCIAS GELO (TRANSPOR - Eixo X deve ser Status)
     # -------------------------------------------------------
     def load_pendencias_gelo(self):
-        colunas = list(self.df.iloc[64, 8:11])
-        regionais = list(self.df.iloc[65:69, 7])
+        categorias = []
+        c = 8
+        while c < len(self.df.columns) and pd.notna(self.df.iloc[64, c]):
+            categorias.append(self.df.iloc[64, c])
+            c += 1
 
-        dados = []
-        for i in range(len(regionais)):
-            valores = list(self.df.iloc[65+i, 8:11])
-            dados.append([regionais[i]] + valores)
+        dados = self._ler_bloco_dinamico(65, 7, len(categorias))
+        df = pd.DataFrame(dados, columns=["regional"] + [str(cat) for cat in categorias])
 
-        return pd.DataFrame(dados, columns=["regional"] + colunas)
+        # Rotacionar
+        df = df.set_index("regional").transpose().reset_index()
+        df.columns.values[0] = "status"
+
+        return df
 
     # -------------------------------------------------------
-    # Retornar todos os blocos organizados em um único dicionário
+    # LOAD ALL
     # -------------------------------------------------------
     def load_all(self):
         return {
-            "pendencia_anual": self.load_pendencia_anual(),
-            "pendencia_regional": self.load_pendencia_regional(),
+            "restaurante_anual": self.load_pendencia_anual(),
+            "restaurante_regional": self.load_pendencia_regional(),
             "backroom": self.load_backroom(),
             "gelo": self.load_gelo(),
             "pendencias_gelo": self.load_pendencias_gelo()
         }
 
-
 # =========================================================
-#  Funções esperadas pelo RESTO DO PROJETO (compatibilidade)
+#  Compatibilidade
 # =========================================================
-
 from mcdagua.routes.api import load_geral_dataframe
 
-# ---------------------------------------------------------
-#  Compatibilidade: função antiga usada pelas telas antigas
-# ---------------------------------------------------------
 def get_dataframe():
     return load_geral_dataframe()
 
-# ---------------------------------------------------------
-#  Compatibilidade: refresh após upload da nova planilha
-# ---------------------------------------------------------
 def refresh_dataframe():
-    """
-    Apenas limpa o cache para forçar recarregamento dos dados.
-    """
     cache.clear()
 
-# ---------------------------------------------------------
-#  Compatibilidade: leitor geral dos gráficos (telas antigas)
-# ---------------------------------------------------------
 def load_all_graphics():
     excel_path = current_app.config["EXCEL_PATH"]
     loader = GraficoPendenciaLoader(excel_path)

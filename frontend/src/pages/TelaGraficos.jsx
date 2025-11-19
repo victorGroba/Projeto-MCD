@@ -24,12 +24,11 @@ ChartJS.register(
 );
 
 export default function TelaGraficos() {
-  const { token } = useAuth(); // Removemos 'user' que não estava a ser usado
+  const { token } = useAuth(); 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Cores para os gráficos (podes personalizar)
   const cores = [
     "rgba(255, 99, 132, 0.7)",
     "rgba(54, 162, 235, 0.7)",
@@ -51,7 +50,7 @@ export default function TelaGraficos() {
       }
 
       const json = await resp.json();
-      console.log("✅ Dados Recebidos Corretamente:", json);
+      console.log("✅ Dados Recebidos:", json);
       setData(json);
     } catch (err) {
       console.error("⛔ Erro ao carregar:", err);
@@ -70,26 +69,31 @@ export default function TelaGraficos() {
   if (!data) return <div className="p-10 text-center">Sem dados disponíveis.</div>;
 
   // --- CONFIGURAÇÃO DOS GRÁFICOS ---
+  // VOLTAMOS A USAR 'restaurante_anual' POIS É O QUE ESTÁ FUNCIONANDO NO /CLIENTE
   
-  // 1. GRÁFICO ANUAL (Corrigido para 'restaurante_anual')
+  // 1. GRÁFICO ANUAL
+  // Tenta ler 'restaurante_anual', se não achar, tenta 'pendencia_anual' por segurança
+  const dadosAnuais = data.restaurante_anual || data.pendencia_anual || {};
+  
   const graficoAnual = {
-    // O backend envia { meses: [...], valores: { "2023": [...], "2024": [...] } }
-    labels: data.restaurante_anual?.meses || [],
-    datasets: Object.keys(data.restaurante_anual?.valores || {}).map((ano, i) => ({
+    labels: dadosAnuais.meses || [],
+    datasets: Object.keys(dadosAnuais.valores || {}).map((ano, i) => ({
       label: ano,
-      data: data.restaurante_anual.valores[ano],
+      data: dadosAnuais.valores[ano],
       borderColor: cores[i % cores.length],
       backgroundColor: cores[i % cores.length],
-      tension: 0.3, // Deixa a linha mais suave
+      tension: 0.3,
     })),
   };
 
-  // 2. GRÁFICO REGIONAL (Corrigido para 'restaurante_regional')
+  // 2. GRÁFICO REGIONAL
+  const dadosRegionais = data.restaurante_regional || data.pendencia_regional || {};
+  
   const graficoRegional = {
-    labels: data.restaurante_regional?.meses || [],
-    datasets: Object.keys(data.restaurante_regional?.valores || {}).map((reg, i) => ({
+    labels: dadosRegionais.meses || [],
+    datasets: Object.keys(dadosRegionais.valores || {}).map((reg, i) => ({
       label: reg,
-      data: data.restaurante_regional.valores[reg],
+      data: dadosRegionais.valores[reg],
       backgroundColor: cores[i % cores.length],
     })),
   };
@@ -131,7 +135,7 @@ export default function TelaGraficos() {
       <div className="grid grid-cols-1 gap-8">
         {/* Gráfico de Linha Grande */}
         <div className="bg-white shadow-lg rounded-xl p-6">
-          <h2 className="text-xl mb-4 font-semibold text-gray-700">Evolução Anual (Restaurantes)</h2>
+          <h2 className="text-xl mb-4 font-semibold text-gray-700">Evolução Anual (Pendências)</h2>
           <div className="h-96">
             <Line 
               data={graficoAnual} 
