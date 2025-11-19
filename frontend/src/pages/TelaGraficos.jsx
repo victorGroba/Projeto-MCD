@@ -12,6 +12,7 @@ import {
 } from "chart.js";
 import { useAuth } from "../store/AuthContext";
 
+// Registo dos componentes do Chart.js
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -23,40 +24,40 @@ ChartJS.register(
 );
 
 export default function TelaGraficos() {
-  const { token, user } = useAuth();
+  const { token } = useAuth(); // Removemos 'user' que não estava a ser usado
   const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Cores para os gráficos (podes personalizar)
+  const cores = [
+    "rgba(255, 99, 132, 0.7)",
+    "rgba(54, 162, 235, 0.7)",
+    "rgba(255, 206, 86, 0.7)",
+    "rgba(75, 192, 192, 0.7)",
+    "rgba(153, 102, 255, 0.7)",
+  ];
 
   const carregar = async () => {
-    console.log("➡ TOKEN RECEBIDO NO COMPONENTE:", token);
-    console.log("➡ USER RECEBIDO NO COMPONENTE:", user);
-
-    if (!token) {
-      console.log("⛔ SEM TOKEN — Não posso buscar os gráficos ainda");
-      return;
-    }
+    if (!token) return;
 
     try {
-      console.log("➡ ENVIANDO FETCH PARA: http://localhost:8000/api/graficos-data");
-
       const resp = await fetch("http://localhost:8000/api/graficos-data", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log("➡ STATUS DA RESPOSTA:", resp.status);
-
       if (!resp.ok) {
-        console.error("⛔ ERRO AO BUSCAR GRÁFICOS:", resp.status);
-        return;
+        throw new Error(`Erro na API: ${resp.status}`);
       }
 
       const json = await resp.json();
-      console.log("➡ JSON RECEBIDO:", json);
+      console.log("✅ Dados Recebidos Corretamente:", json);
       setData(json);
-
     } catch (err) {
-      console.error("⛔ ERRO FATAL NO FETCH:", err);
+      console.error("⛔ Erro ao carregar:", err);
+      setError("Falha ao carregar dados.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -64,93 +65,107 @@ export default function TelaGraficos() {
     if (token) carregar();
   }, [token]);
 
-  if (!data) return <p className="p-4 text-lg">Carregando gráficos...</p>;
+  if (loading) return <div className="p-10 text-center">A carregar gráficos...</div>;
+  if (error) return <div className="p-10 text-center text-red-500">{error}</div>;
+  if (!data) return <div className="p-10 text-center">Sem dados disponíveis.</div>;
 
+  // --- CONFIGURAÇÃO DOS GRÁFICOS ---
+  
+  // 1. GRÁFICO ANUAL (Corrigido para 'restaurante_anual')
   const graficoAnual = {
-    labels: data.pendencia_anual.map((l) => l.mes),
-    datasets: [
-      {
-        label: "2023",
-        data: data.pendencia_anual.map((l) => l["2023"]),
-      },
-      {
-        label: "2024",
-        data: data.pendencia_anual.map((l) => l["2024"]),
-      },
-      {
-        label: "2025",
-        data: data.pendencia_anual.map((l) => l["2025"]),
-      },
-    ],
+    // O backend envia { meses: [...], valores: { "2023": [...], "2024": [...] } }
+    labels: data.restaurante_anual?.meses || [],
+    datasets: Object.keys(data.restaurante_anual?.valores || {}).map((ano, i) => ({
+      label: ano,
+      data: data.restaurante_anual.valores[ano],
+      borderColor: cores[i % cores.length],
+      backgroundColor: cores[i % cores.length],
+      tension: 0.3, // Deixa a linha mais suave
+    })),
   };
 
+  // 2. GRÁFICO REGIONAL (Corrigido para 'restaurante_regional')
   const graficoRegional = {
-    labels: data.pendencia_regional.map((l) => l.mes),
-    datasets: Object.keys(data.pendencia_regional[0])
-      .filter((k) => k !== "mes")
-      .map((reg) => ({
-        label: reg,
-        data: data.pendencia_regional.map((l) => l[reg]),
-      })),
+    labels: data.restaurante_regional?.meses || [],
+    datasets: Object.keys(data.restaurante_regional?.valores || {}).map((reg, i) => ({
+      label: reg,
+      data: data.restaurante_regional.valores[reg],
+      backgroundColor: cores[i % cores.length],
+    })),
   };
 
+  // 3. BACKROOM
   const graficoBackroom = {
-    labels: data.backroom.map((l) => l.regional),
-    datasets: Object.keys(data.backroom[0])
-      .filter((k) => k !== "regional")
-      .map((cat) => ({
-        label: cat,
-        data: data.backroom.map((l) => l[cat]),
-      })),
+    labels: data.backroom?.categorias || [],
+    datasets: Object.keys(data.backroom?.valores || {}).map((reg, i) => ({
+      label: reg,
+      data: data.backroom.valores[reg],
+      backgroundColor: cores[i % cores.length],
+    })),
   };
 
+  // 4. GELO
   const graficoGelo = {
-    labels: data.gelo.map((l) => l.regional),
-    datasets: Object.keys(data.gelo[0])
-      .filter((k) => k !== "regional")
-      .map((cat) => ({
-        label: cat,
-        data: data.gelo.map((l) => l[cat]),
-      })),
+    labels: data.gelo?.categorias || [],
+    datasets: Object.keys(data.gelo?.valores || {}).map((reg, i) => ({
+      label: reg,
+      data: data.gelo.valores[reg],
+      backgroundColor: cores[i % cores.length],
+    })),
   };
 
+  // 5. PENDÊNCIAS GELO
   const graficoPendenciasGelo = {
-    labels: data.pendencias_gelo.map((l) => l.regional),
-    datasets: Object.keys(data.pendencias_gelo[0])
-      .filter((k) => k !== "regional")
-      .map((cat) => ({
-        label: cat,
-        data: data.pendencias_gelo.map((l) => l[cat]),
-      })),
+    labels: data.pendencias_gelo?.categorias || [],
+    datasets: Object.keys(data.pendencias_gelo?.valores || {}).map((reg, i) => ({
+      label: reg,
+      data: data.pendencias_gelo.valores[reg],
+      backgroundColor: cores[i % cores.length],
+    })),
   };
 
   return (
-    <div className="p-6 space-y-10">
-      <h1 className="text-3xl font-bold">Gráficos</h1>
+    <div className="p-6 space-y-10 bg-gray-50 min-h-screen">
+      <h1 className="text-3xl font-bold text-gray-800">Dashboard de Gráficos</h1>
 
-      <div className="bg-white shadow rounded-xl p-6">
-        <h2 className="text-xl mb-4">Pendência Restaurante Anual</h2>
-        <Line data={graficoAnual} />
-      </div>
+      <div className="grid grid-cols-1 gap-8">
+        {/* Gráfico de Linha Grande */}
+        <div className="bg-white shadow-lg rounded-xl p-6">
+          <h2 className="text-xl mb-4 font-semibold text-gray-700">Evolução Anual (Restaurantes)</h2>
+          <div className="h-96">
+            <Line 
+              data={graficoAnual} 
+              options={{ 
+                responsive: true, 
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } }
+              }} 
+            />
+          </div>
+        </div>
 
-      <div className="bg-white shadow rounded-xl p-6">
-        <h2 className="text-xl mb-4">Pendência Restaurante por Regional</h2>
-        <Bar data={graficoRegional} />
-      </div>
+        {/* Grids para os gráficos de barras */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-white shadow-lg rounded-xl p-6">
+            <h2 className="text-xl mb-4 font-semibold text-gray-700">Por Regional</h2>
+            <Bar data={graficoRegional} />
+          </div>
 
-      <div className="bg-white shadow rounded-xl p-6">
-        <h2 className="text-xl mb-4">Backroom</h2>
-        <Bar data={graficoBackroom} />
-      </div>
+          <div className="bg-white shadow-lg rounded-xl p-6">
+            <h2 className="text-xl mb-4 font-semibold text-gray-700">Backroom</h2>
+            <Bar data={graficoBackroom} />
+          </div>
 
-      <div className="bg-white shadow rounded-xl p-6">
-        <h2 className="text-xl mb-4">Gelo</h2>
-        <Bar data={graficoGelo} />
-      </div>
+          <div className="bg-white shadow-lg rounded-xl p-6">
+            <h2 className="text-xl mb-4 font-semibold text-gray-700">Gelo</h2>
+            <Bar data={graficoGelo} />
+          </div>
 
-      <div className="bg-white shadow rounded-xl p-6">
-        <h2 className="text-xl mb-4">Pendências de Gelo</h2>
-        <Bar data={graficoPendenciasGelo} />
+          <div className="bg-white shadow-lg rounded-xl p-6">
+            <h2 className="text-xl mb-4 font-semibold text-gray-700">Pendências Gelo</h2>
+            <Bar data={graficoPendenciasGelo} />
+          </div>
+        </div>
       </div>
     </div>
   );
