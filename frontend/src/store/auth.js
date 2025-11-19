@@ -11,7 +11,7 @@ export const auth = {
     return localStorage.getItem("token");
   },
 
-  isLogged() {
+  isAuthenticated() {
     return !!localStorage.getItem("token");
   }
 };
