@@ -11,3 +11,8 @@ def load_config(app):
 
     app.config["CACHE_TYPE"] = "SimpleCache"
     app.config["CACHE_DEFAULT_TIMEOUT"] = 300
+    
+    # --- NOVO: Configuração do JWT ---
+    
+    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "super-secret-jwt-key-change-this") 
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = 3600  # Token expira em 1 hora

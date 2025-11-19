@@ -1,6 +1,6 @@
 from flask import Flask
 from mcdagua.config import load_config
-from mcdagua.extensions import cache, scheduler
+from mcdagua.extensions import cache, scheduler, jwt  # <--- ADICIONADO O JWT AQUI
 from mcdagua.routes.ui import ui_bp
 from mcdagua.routes.api import api_bp
 from mcdagua.routes.upload import upload_bp
@@ -15,6 +15,7 @@ def create_app():
     load_config(app)
     cache.init_app(app)
     scheduler.start()
+    jwt.init_app(app)  # <--- INICIALIZAÇÃO DO JWT ADICIONADA AQUI
 
     auth_bp.server = app
     app.register_blueprint(auth_bp)
