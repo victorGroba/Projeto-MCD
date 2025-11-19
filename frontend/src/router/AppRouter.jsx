@@ -6,6 +6,8 @@ import Ranking from "../pages/Ranking";
 import Graficos from "../pages/Graficos";
 import Heatmap from "../pages/Heatmap";
 import PrivateRoute from "./PrivateRoute";
+import TelaGeral from "../pages/TelaGeral";
+import TelaGraficos from "../pages/TelaGraficos";
 
 export default function AppRouter() {
   return (
@@ -44,6 +46,7 @@ export default function AppRouter() {
           }
         />
 
+        {/* SUAS PÁGINAS ANTIGAS */}
         <Route
           path="/graficos"
           element={
@@ -58,6 +61,25 @@ export default function AppRouter() {
           element={
             <PrivateRoute>
               <Heatmap />
+            </PrivateRoute>
+          }
+        />
+
+        {/* NOVAS PÁGINAS DO SISTEMA */}
+        <Route
+          path="/geral"
+          element={
+            <PrivateRoute>
+              <TelaGeral />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/graficos-novo"
+          element={
+            <PrivateRoute>
+              <TelaGraficos />
             </PrivateRoute>
           }
         />
