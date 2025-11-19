@@ -14,4 +14,11 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Arquivos grandes ou compactados
 *.zip
+*.rar
+
+# Segurança (NUNCA REMOVA ISSO)
+.env
+
+*.xlsx
