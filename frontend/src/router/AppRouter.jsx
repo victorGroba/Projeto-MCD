@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "../pages/Login";
+import Home from "../pages/Home"; // <--- Nova página Hub
 import DashboardCliente from "../pages/DashboardCliente";
 import DashboardOperacional from "../pages/DashboardOperacional";
 import Ranking from "../pages/Ranking";
@@ -14,11 +15,42 @@ export default function AppRouter() {
     <BrowserRouter>
       <Routes>
 
-        {/* REDIRECIONAR "/" PARA LOGIN */}
+        {/* Rota padrão redireciona para Login */}
         <Route path="/" element={<Navigate to="/login" />} />
 
+        {/* Rota Pública */}
         <Route path="/login" element={<Login />} />
 
+        {/* --- ROTA PRINCIPAL (HUB) --- */}
+        <Route
+          path="/home"
+          element={
+            <PrivateRoute>
+              <Home />
+            </PrivateRoute>
+          }
+        />
+
+        {/* --- NOVAS PÁGINAS DO SISTEMA (Conectadas ao Hub) --- */}
+        <Route
+          path="/geral"
+          element={
+            <PrivateRoute>
+              <TelaGeral />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/graficos-novo"
+          element={
+            <PrivateRoute>
+              <TelaGraficos />
+            </PrivateRoute>
+          }
+        />
+
+        {/* --- ROTAS LEGADO / ESPECÍFICAS --- */}
         <Route
           path="/cliente"
           element={
@@ -46,7 +78,6 @@ export default function AppRouter() {
           }
         />
 
-        {/* SUAS PÁGINAS ANTIGAS */}
         <Route
           path="/graficos"
           element={
@@ -65,24 +96,8 @@ export default function AppRouter() {
           }
         />
 
-        {/* NOVAS PÁGINAS DO SISTEMA */}
-        <Route
-          path="/geral"
-          element={
-            <PrivateRoute>
-              <TelaGeral />
-            </PrivateRoute>
-          }
-        />
-
-        <Route
-          path="/graficos-novo"
-          element={
-            <PrivateRoute>
-              <TelaGraficos />
-            </PrivateRoute>
-          }
-        />
+        {/* Rota de "catch-all" para páginas não encontradas */}
+        <Route path="*" element={<Navigate to="/login" />} />
 
       </Routes>
     </BrowserRouter>

@@ -22,7 +22,8 @@ export default function Login() {
       return;
     }
 
-    navigate("/cliente");
+    // --- CORREÇÃO AQUI: Redireciona para o novo Hub ---
+    navigate("/home"); 
   }
 
   return (
