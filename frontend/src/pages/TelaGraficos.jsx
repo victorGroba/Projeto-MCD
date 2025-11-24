@@ -9,6 +9,12 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend);
 
+// Ordem cronológica correta para forçar a ordenação dos meses
+const ORDEM_MESES = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+];
+
 export default function TelaGraficos() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -40,27 +46,35 @@ export default function TelaGraficos() {
       return { labels: [], datasets: [] };
     }
     
-    // PRIORIDADE DE EIXOS:
-    // 1. status (Para Backroom e Gelo: Programado, Insatisfatório...)
-    // 2. regional (Para Pendência Regional: BRA, RSOU...)
-    // 3. meses (Para Anual)
+    // Eixos X
     const labels = apiData.status || apiData.regional || apiData.regionais || apiData.meses || [];
     
+    // --- NOVA LÓGICA DE ORDENAÇÃO ---
+    // Pega as chaves (ex: "janeiro", "fevereiro" ou "BRA", "RSOU")
+    let keys = Object.keys(apiData.valores);
+
+    // Verifica se as chaves são meses para aplicar a ordenação cronológica
+    const saoMeses = keys.some(k => ORDEM_MESES.includes(k.toLowerCase().trim()));
+
+    if (saoMeses) {
+      keys.sort((a, b) => {
+        const idxA = ORDEM_MESES.indexOf(a.toLowerCase().trim());
+        const idxB = ORDEM_MESES.indexOf(b.toLowerCase().trim());
+        // Se não encontrar o mês (ex: -1), joga pro final. Se encontrar, ordena pelo índice.
+        return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+      });
+    }
+    // --------------------------------
+
     // Paleta de Cores (Excel Standard)
-    // 1: Azul, 2: Laranja, 3: Cinza, 4: Amarelo, 5: Azul Claro, 6: Verde
     const excelColors = [
-      "#4472C4", 
-      "#ED7D31", 
-      "#A5A5A5", 
-      "#FFC000", 
-      "#5B9BD5", 
-      "#70AD47", 
-      "#264478", 
-      "#9E480E", 
+      "#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", 
+      "#5B9BD5", "#70AD47", "#264478", "#9E480E", 
     ];
 
-    const datasets = Object.keys(apiData.valores).map((key, index) => ({
-      label: key, // Ex: BRA, RSOU (no Backroom) ou Janeiro (no Regional)
+    // Gera os datasets AGORA NA ORDEM CERTA (baseado em 'keys' ordenado)
+    const datasets = keys.map((key, index) => ({
+      label: key, 
       data: apiData.valores[key],
       backgroundColor: excelColors[index % excelColors.length],
       borderColor: excelColors[index % excelColors.length],
@@ -119,7 +133,7 @@ export default function TelaGraficos() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-10">
         
-        {/* 1. PENDÊNCIA ANUAL (X=Meses, Series=Anos) */}
+        {/* 1. PENDÊNCIA ANUAL */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg col-span-1 lg:col-span-2">
           <h2 className="text-lg font-semibold mb-4 text-center text-white">Pendência restaurante Anual</h2>
           <div className="h-80">
@@ -127,7 +141,7 @@ export default function TelaGraficos() {
           </div>
         </div>
 
-        {/* 2. REGIONAL (X=Regionais, Series=Meses) */}
+        {/* 2. REGIONAL (Este é o gráfico que estava com a ordem errada) */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg col-span-1 lg:col-span-2">
           <h2 className="text-lg font-bold mb-4 text-center text-white">Pendência restaurante por regional</h2>
           <div className="h-96">
@@ -135,7 +149,7 @@ export default function TelaGraficos() {
           </div>
         </div>
 
-        {/* 3. BACKROOM (X=Status, Series=Regionais) */}
+        {/* 3. BACKROOM */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
           <h2 className="text-lg font-bold mb-4 text-center text-white">Back room</h2>
           <div className="h-72">
@@ -143,7 +157,7 @@ export default function TelaGraficos() {
           </div>
         </div>
 
-        {/* 4. GELO (X=Status, Series=Regionais) */}
+        {/* 4. GELO */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
           <h2 className="text-lg font-bold mb-4 text-center text-white">Gelo</h2>
           <div className="h-72">
@@ -151,7 +165,7 @@ export default function TelaGraficos() {
           </div>
         </div>
 
-        {/* 5. PENDÊNCIAS DE GELO (X=Status, Series=Regionais) */}
+        {/* 5. PENDÊNCIAS DE GELO */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg col-span-1 lg:col-span-2">
           <h2 className="text-lg font-bold mb-4 text-center text-white">Pendências de Gelo</h2>
           <div className="h-72">
