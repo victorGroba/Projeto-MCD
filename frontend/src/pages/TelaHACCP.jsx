@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
-import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown } from "lucide-react";
+import { ArrowLeft, Filter, ShieldAlert, X, RefreshCw, Check, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-// --- COMPONENTE MULTI-SELECT (Versão Azul Padrão) ---
-function MultiSelect({ label, options, selectedValues = [], onChange }) {
+// --- COMPONENTE MULTI-SELECT (Reutilizável) ---
+function MultiSelect({ label, options, selectedValues = [], onChange, color = "orange" }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
 
+  // Fecha ao clicar fora
   useEffect(() => {
     function handleClickOutside(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
@@ -29,6 +30,11 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
     onChange(updated);
   };
 
+  // Classes dinâmicas baseadas na cor
+  const borderActive = color === "orange" ? "border-orange-500 ring-orange-500/20" : "border-blue-500 ring-blue-500/20";
+  const bgActive = color === "orange" ? "bg-orange-500/20" : "bg-blue-500/20";
+  const checkBg = color === "orange" ? "bg-orange-500 border-orange-500" : "bg-blue-500 border-blue-500";
+
   return (
     <div className="flex flex-col gap-1 relative" ref={containerRef}>
       <label className="text-[10px] text-slate-500 font-bold uppercase truncate" title={label}>
@@ -39,11 +45,15 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
         onClick={() => setIsOpen(!isOpen)}
         className={`
           flex items-center justify-between bg-slate-950 border text-xs rounded-lg p-2.5 text-left transition-colors w-full
-          ${selectedValues.length > 0 ? 'border-blue-500 ring-1 ring-blue-500/20 text-white' : 'border-slate-700 text-slate-400 hover:border-slate-600'}
+          ${selectedValues.length > 0 ? `${borderActive} ring-1 text-white` : 'border-slate-700 text-slate-400 hover:border-slate-600'}
         `}
       >
         <span className="truncate">
-          {selectedValues.length === 0 ? "Todos" : `${selectedValues.length} selecionados`}
+          {selectedValues.length === 0 
+            ? "Todos" 
+            : selectedValues.length === 1 
+              ? selectedValues[0] 
+              : `${selectedValues.length} selecionados`}
         </span>
         <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -58,12 +68,12 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
                 onClick={() => toggleOption(opt)}
                 className={`
                   flex items-center gap-2 px-2 py-2 rounded cursor-pointer text-xs transition-colors
-                  ${isSelected ? 'bg-blue-500/20 text-white' : 'text-slate-400 hover:bg-slate-800'}
+                  ${isSelected ? `${bgActive} text-white` : 'text-slate-400 hover:bg-slate-800'}
                 `}
               >
                 <div className={`
                   w-4 h-4 rounded border flex items-center justify-center transition-colors
-                  ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}
+                  ${isSelected ? checkBg : 'border-slate-600'}
                 `}>
                   {isSelected && <Check size={10} className="text-white" />}
                 </div>
@@ -77,85 +87,53 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
   );
 }
 
-// --- TELA GERAL ---
-export default function TelaGeral() {
+// --- TELA HACCP ---
+export default function TelaHACCP() {
   const navigate = useNavigate();
   const [dados, setDados] = useState([]);
   const [colunas, setColunas] = useState([]);
-  
-  // Opções para os filtros (carregadas separadamente)
   const [opcoesFiltro, setOpcoesFiltro] = useState({});
-  // Mapa de nomes para traduzir o filtro do front para a coluna real do Excel
-  const [nomesColunas, setNomesColunas] = useState({});
-  
   const [filtrosAtivos, setFiltrosAtivos] = useState({});
   const [loading, setLoading] = useState(true);
 
-  // 1. Inicialização: Carrega as opções de filtro
-  useEffect(() => {
-    async function carregarOpcoes() {
-      try {
-        const res = await api.get("/api/filtros-opcoes");
-        
-        // Separa as opções (listas) dos nomes das colunas
-        const opcoes = {};
-        const nomes = {};
-        
-        Object.keys(res.data).forEach(key => {
-          if (key.endsWith("_col_name")) {
-            const nomeFiltro = key.replace("_col_name", "");
-            nomes[nomeFiltro] = res.data[key];
-          } else {
-            opcoes[key] = res.data[key];
-          }
-        });
-
-        setOpcoesFiltro(opcoes);
-        setNomesColunas(nomes);
-        
-        // Carrega os dados iniciais sem filtro
-        fetchDados({}, nomes); 
-      } catch (err) {
-        console.error("Erro ao iniciar Geral:", err);
-        setLoading(false);
-      }
-    }
-    carregarOpcoes();
-  }, []);
-
-  // 2. Busca Dados
-  const fetchDados = async (filtros = {}, mapNomes = nomesColunas) => {
+  const fetchDados = async (filtros = {}) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      
       Object.entries(filtros).forEach(([key, val]) => {
-        // Usa o nome real da coluna se existir no mapa, senão usa a chave direta
-        const colunaReal = mapNomes[key] || key;
-        
         if (Array.isArray(val) && val.length > 0) {
-          params.append(colunaReal, val.join(","));
+          params.append(key, val.join(","));
         } else if (val && !Array.isArray(val)) {
-          params.append(colunaReal, val);
+          params.append(key, val);
         }
       });
 
-      const res = await api.get(`/api/geral?${params.toString()}`);
+      const res = await api.get(`/api/haccp?${params.toString()}`);
+      
       setDados(res.data.dados || []);
       setColunas(res.data.colunas || []);
+      
+      if (Object.keys(filtros).length === 0) {
+        setOpcoesFiltro(res.data.opcoes_filtro || {});
+      }
+
     } catch (err) {
-      console.error("Erro ao buscar dados:", err);
+      console.error("Erro HACCP:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFiltroChange = (chaveFiltro, novosValores) => {
+  useEffect(() => {
+    fetchDados();
+  }, []);
+
+  const handleFiltroChange = (coluna, novosValores) => {
     const novoEstado = { ...filtrosAtivos };
     if (novosValores.length === 0) {
-      delete novoEstado[chaveFiltro];
+      delete novoEstado[coluna];
     } else {
-      novoEstado[chaveFiltro] = novosValores;
+      novoEstado[coluna] = novosValores;
     }
     setFiltrosAtivos(novoEstado);
     fetchDados(novoEstado);
@@ -169,6 +147,7 @@ export default function TelaGeral() {
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-8">
       
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate("/home")} className="p-2 bg-slate-900 rounded-lg hover:bg-slate-800 border border-slate-800 transition">
@@ -176,10 +155,10 @@ export default function TelaGeral() {
           </button>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2 text-white">
-              <Table className="text-blue-500" />
-              Base de Dados Geral
+              <ShieldAlert className="text-orange-500" />
+              Controle HACCP
             </h1>
-            <p className="text-slate-400 text-sm">Tabela Mestre Diária</p>
+            <p className="text-slate-400 text-sm">Consolidado de Segurança Alimentar</p>
           </div>
         </div>
         
@@ -193,10 +172,11 @@ export default function TelaGeral() {
         </div>
       </div>
 
+      {/* Filtros */}
       <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 mb-6 shadow-lg">
         <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-2">
-          <div className="flex items-center gap-2 text-blue-400 font-semibold text-sm uppercase">
-            <Filter size={16} /> Filtros Múltiplos
+          <div className="flex items-center gap-2 text-orange-400 font-semibold text-sm uppercase">
+            <Filter size={16} /> Filtros Disponíveis
           </div>
           {Object.keys(filtrosAtivos).length > 0 && (
             <button onClick={limparFiltros} className="text-xs flex items-center gap-1 text-red-400 hover:text-red-300 transition">
@@ -205,25 +185,26 @@ export default function TelaGeral() {
           )}
         </div>
         
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {/* Renderiza os filtros baseados nas opções retornadas pela API */}
-          {Object.keys(opcoesFiltro).map((key) => (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          {Object.keys(opcoesFiltro).map((col) => (
             <MultiSelect
-              key={key}
-              label={key} // Ex: regional, estado, sigla_loja
-              options={opcoesFiltro[key]}
-              selectedValues={filtrosAtivos[key]}
-              onChange={(vals) => handleFiltroChange(key, vals)}
+              key={col}
+              label={col}
+              options={opcoesFiltro[col]}
+              selectedValues={filtrosAtivos[col]}
+              onChange={(vals) => handleFiltroChange(col, vals)}
+              color="orange"
             />
           ))}
         </div>
       </div>
 
+      {/* Tabela */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden shadow-xl flex flex-col min-h-[400px]">
         <div className="overflow-x-auto flex-1">
           {loading ? (
             <div className="flex h-full items-center justify-center text-slate-500">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mr-3"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mr-3"></div>
               Carregando...
             </div>
           ) : (
@@ -231,7 +212,9 @@ export default function TelaGeral() {
               <thead className="bg-slate-950 text-xs uppercase text-slate-500 font-bold sticky top-0 z-10 shadow-sm">
                 <tr>
                   {colunas.map(col => (
-                    <th key={col} className="px-6 py-4 border-b border-slate-800">{col.replace(/_/g, " ")}</th>
+                    <th key={col} className="px-6 py-4 border-b border-slate-800 tracking-wider">
+                      {col.replace(/_/g, " ")}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -244,7 +227,7 @@ export default function TelaGeral() {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={colunas.length || 1} className="p-12 text-center text-slate-500">Nada encontrado.</td>
+                    <td colSpan={colunas.length || 1} className="p-12 text-center text-slate-500">Nenhum registro encontrado.</td>
                   </tr>
                 )}
               </tbody>

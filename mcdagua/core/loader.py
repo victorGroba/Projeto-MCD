@@ -2,6 +2,102 @@ import pandas as pd
 from flask import current_app
 from mcdagua.extensions import cache
 
+# ==============================================================================
+# 1. LOADER GERAL (Movido de api.py para corrigir importação circular)
+# ==============================================================================
+def load_geral_dataframe():
+    path = current_app.config["EXCEL_PATH"]
+
+    try:
+        # header=1 : Pula a primeira linha (Título) e usa a segunda como cabeçalho
+        df = pd.read_excel(path, sheet_name="GERAL", header=1)
+    except Exception as e:
+        print(f"Erro ao ler Excel (Geral): {e}")
+        return pd.DataFrame()
+
+    # Limpeza e Padronização dos Nomes das Colunas
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.lower()
+        .str.normalize("NFKD")
+        .str.encode("ascii", errors="ignore")
+        .str.decode("utf-8")
+        .str.replace(" ", "_")
+        .str.replace("/", "_")
+        .str.replace("(", "")
+        .str.replace(")", "")
+        .str.replace(".", "")
+    )
+
+    # Remove colunas que não têm nome (geradas por células vazias no header)
+    df = df.loc[:, ~df.columns.str.contains('^unnamed')]
+    
+    # Remove colunas/linhas que estão totalmente vazias
+    df = df.dropna(how="all", axis=1)
+    df = df.dropna(how="all", axis=0)
+
+    # Preenche valores nulos com vazio para o JSON não quebrar
+    df = df.fillna("")
+
+    return df
+
+# ==============================================================================
+# 2. LOADERS DOS NOVOS MÓDULOS (VISA e HACCP)
+# ==============================================================================
+
+def load_visa_dataframe():
+    """Carrega a aba 'Consolidado Coletas' da Planilha Mãe."""
+    path = current_app.config["EXCEL_PATH"]
+    try:
+        df = pd.read_excel(path, sheet_name="Consolidado Coletas")
+        
+        # Limpeza de nomes das colunas
+        df.columns = (
+            df.columns
+            .str.strip()
+            .str.lower()
+            .str.replace(" ", "_")
+            .str.replace("/", "_")
+            .str.normalize("NFKD")
+            .str.encode("ascii", errors="ignore")
+            .str.decode("utf-8")
+        )
+        
+        # Converte colunas de data para texto
+        for col in df.columns:
+            if "data" in col:
+                df[col] = df[col].astype(str).replace("NaT", "")
+        
+        df = df.fillna("")
+        return df
+    except Exception as e:
+        print(f"❌ [VISA] Erro ao carregar aba 'Consolidado Coletas': {e}")
+        return pd.DataFrame()
+
+def load_haccp_dataframe():
+    """Carrega a aba 'HACCP' da Planilha Mãe."""
+    path = current_app.config["EXCEL_PATH"]
+    try:
+        # header=1 assume que a primeira linha é título e a segunda é o cabeçalho real
+        df = pd.read_excel(path, sheet_name="HACCP", header=1)
+        
+        # Remove colunas e linhas vazias
+        df = df.dropna(how="all", axis=1)
+        df = df.dropna(how="all", axis=0)
+        
+        # Padronização de colunas
+        df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+        
+        df = df.fillna("")
+        return df
+    except Exception as e:
+        print(f"❌ [HACCP] Erro ao carregar aba 'HACCP': {e}")
+        return pd.DataFrame()
+
+# ==============================================================================
+# 3. CLASSE DE CARREGAMENTO DE GRÁFICOS (LEGADO)
+# ==============================================================================
 class GraficoPendenciaLoader:
 
     def __init__(self, excel_path: str):
@@ -11,7 +107,7 @@ class GraficoPendenciaLoader:
             self.df = pd.read_excel(self.path, sheet_name="GRÁFICO PENDENCIA", header=None)
             print(f"✅ [LOADER] Planilha carregada. Linhas: {len(self.df)}")
         except Exception as e:
-            print(f"❌ [LOADER] Erro ao abrir planilha: {e}")
+            print(f"❌ [LOADER] Erro ao abrir planilha de gráficos: {e}")
             self.df = pd.DataFrame()
 
     def _ler_bloco_dinamico(self, linha_inicio, col_inicio, num_cols):
@@ -19,26 +115,20 @@ class GraficoPendenciaLoader:
         dados = []
         linha = linha_inicio
         
-        # Verifica se a linha inicial está dentro do limite antes de começar
         if linha >= len(self.df):
             return dados
         
         while linha < len(self.df):
             rotulo = self.df.iloc[linha, col_inicio]
-            # Se o rótulo for vazio, NaN ou string vazia, paramos
             if pd.isna(rotulo) or str(rotulo).strip() == "":
                 break
             
-            # Pega os valores das colunas à direita
             valores = list(self.df.iloc[linha, col_inicio+1 : col_inicio+1+num_cols])
             dados.append([rotulo] + valores)
             linha += 1
             
         return dados
 
-    # -------------------------------------------------------
-    # 1. ANUAL
-    # -------------------------------------------------------
     def load_pendencia_anual(self):
         try:
             anos = list(self.df.iloc[2, 8:11]) 
@@ -48,41 +138,15 @@ class GraficoPendenciaLoader:
         except:
             return pd.DataFrame()
 
-    # -------------------------------------------------------
-    # 2. REGIONAL (Transposto)
-    # -------------------------------------------------------
-    # -------------------------------------------------------
-    # 2. REGIONAL (CORRIGIDO PELO PRINT)
-    # -------------------------------------------------------
-    # -------------------------------------------------------
-    # 2. REGIONAL (CORRIGIDO PELO PRINT)
-    # -------------------------------------------------------
     def load_pendencia_regional(self):
         try:
-            # ================= CONFIGURAÇÃO EXATA (BASEADA NO PRINT) =================
-            # A imagem mostra que:
-            # - Os cabeçalhos (BRA, RSOU, SAO1...) estão na linha 21 do Excel.
-            # - Os dados (janeiro, fevereiro...) começam na linha 22 do Excel.
-            # - Os nomes dos meses estão na Coluna G.
-            # - Os números começam na Coluna H.
-            
-            ROW_HEADER = 20  # Linha 21 do Excel (índice 20)
-            ROW_DATA   = 21  # Linha 22 do Excel (índice 21)
-            COL_NAMES  = 6   # Coluna G (índice 6)
-            COL_START  = 7   # Coluna H (índice 7)
-            # =========================================================================
-
-            if not self.df.empty:
-                print(f"\n🔍 [DEBUG REGIONAL] Validando coordenadas:")
-                if len(self.df) > ROW_DATA and len(self.df.columns) > COL_START:
-                    txt_header = self.df.iloc[ROW_HEADER, COL_START] # Esperado: "BRA" (ou similar)
-                    txt_dado   = self.df.iloc[ROW_DATA, COL_NAMES]   # Esperado: "janeiro"
-                    print(f"   -> Header (L21/Col H): '{txt_header}'")
-                    print(f"   -> Dado   (L22/Col G): '{txt_dado}'")
+            ROW_HEADER = 20
+            ROW_DATA   = 21
+            COL_NAMES  = 6
+            COL_START  = 7
 
             regionais = []
             c = COL_START
-            # Lê as colunas de cabeçalho (Regionais) até acabar
             while c < len(self.df.columns):
                 val = self.df.iloc[ROW_HEADER, c]
                 if pd.isna(val) or str(val).strip() == "":
@@ -90,59 +154,26 @@ class GraficoPendenciaLoader:
                 regionais.append(val)
                 c += 1
             
-            # Lê as linhas de dados (Meses)
             dados = self._ler_bloco_dinamico(ROW_DATA, COL_NAMES, len(regionais))
-            
-            # Cria o DataFrame na ordem exata da planilha (Janeiro, Fevereiro...)
             df = pd.DataFrame(dados, columns=["mes"] + [str(r) for r in regionais])
 
-            # TRANSPOSIÇÃO: 
-            # O Excel tem Meses nas linhas e Regionais nas colunas.
-            # O gráfico precisa de Regionais no Eixo X. Por isso transpomos.
-            # A ordem das colunas (Meses) será preservada.
             if not df.empty:
                 df = df.set_index("mes").transpose().reset_index()
                 df.rename(columns={"index": "regional"}, inplace=True) 
             
             return df
-        except Exception as e:
-            print(f"⚠️ [LOADER] Erro Regional: {e}")
-            import traceback
-            traceback.print_exc()
+        except:
             return pd.DataFrame()
-    # -------------------------------------------------------
-    # 3. BACKROOM (COM DEBUG ATIVO)
-    # -------------------------------------------------------
-    # -------------------------------------------------------
-    # 3. BACKROOM (CORRIGIDO PELO PRINT)
-    # -------------------------------------------------------
+
     def load_backroom(self):
         try:
-            # ================= CONFIGURAÇÃO EXATA (BASEADA NO PRINT) =================
-            # Excel Linha 36 -> Python 35
-            # Excel Coluna G -> Python 6
+            ROW_HEADER = 35
+            ROW_DATA   = 36
+            COL_NAMES  = 6
+            COL_START  = 7
             
-            ROW_HEADER = 35  # Linha 36 do Excel ("Programado", "Insatisfatório"...)
-            ROW_DATA   = 36  # Linha 37 do Excel (Começa "RSOU"...)
-            COL_NAMES  = 6   # Coluna G (Onde estão os nomes RSOU, BRA...)
-            COL_START  = 7   # Coluna H (Onde começam os números)
-            # =========================================================================
-
-            # DEBUG: Confirma no terminal se pegou o texto certo
-            if not self.df.empty:
-                print(f"\n🔍 [DEBUG BACKROOM] Validando coordenadas:")
-                # Proteção de índice
-                if len(self.df) > ROW_DATA and len(self.df.columns) > COL_START:
-                    txt_header = self.df.iloc[ROW_HEADER, COL_START] # Esperado: "Programado"
-                    txt_dado   = self.df.iloc[ROW_DATA, COL_NAMES]   # Esperado: "RSOU"
-                    print(f"   -> Header (L36/Col H): '{txt_header}'")
-                    print(f"   -> Dado   (L37/Col G): '{txt_dado}'")
-                else:
-                    print("   -> ❌ Índices fora do limite da planilha.")
-
             categorias = []
             c = COL_START
-            # Lê os cabeçalhos até acabar ou encontrar vazio
             while c < len(self.df.columns):
                 val = self.df.iloc[ROW_HEADER, c]
                 if pd.isna(val) or str(val).strip() == "":
@@ -150,26 +181,17 @@ class GraficoPendenciaLoader:
                 categorias.append(val)
                 c += 1
             
-            # Lê os dados (Regionais e valores)
             dados = self._ler_bloco_dinamico(ROW_DATA, COL_NAMES, len(categorias))
-            
             df = pd.DataFrame(dados, columns=["regional"] + [str(cat) for cat in categorias])
 
-            # TRANSPOSIÇÃO (Pivotar a tabela para o formato do gráfico)
             if not df.empty:
                 df = df.set_index("regional").transpose().reset_index()
                 df.rename(columns={"index": "status"}, inplace=True)
 
             return df
-        except Exception as e:
-            print(f"⚠️ [LOADER] Erro Backroom: {e}")
-            import traceback
-            traceback.print_exc()
+        except:
             return pd.DataFrame()
 
-    # -------------------------------------------------------
-    # 4. GELO
-    # -------------------------------------------------------
     def load_gelo(self):
         try:
             categorias = []
@@ -189,9 +211,6 @@ class GraficoPendenciaLoader:
         except:
             return pd.DataFrame()
 
-    # -------------------------------------------------------
-    # 5. PENDÊNCIAS GELO
-    # -------------------------------------------------------
     def load_pendencias_gelo(self):
         try:
             categorias = []
@@ -220,17 +239,21 @@ class GraficoPendenciaLoader:
             "pendencias_gelo": self.load_pendencias_gelo()
         }
 
-# Helpers
-from mcdagua.routes.api import load_geral_dataframe
+# ==============================================================================
+# 4. FUNÇÕES HELPER EXPORTADAS
+# ==============================================================================
 
 def get_dataframe():
+    """Retorna o DataFrame da aba GERAL (usado pelo dashboard legacy)."""
     return load_geral_dataframe()
 
 def refresh_dataframe():
+    """Limpa o cache para forçar recarregamento."""
     with current_app.app_context():
         cache.clear()
 
 def load_all_graphics():
+    """Carrega todos os dados da aba GRÁFICO PENDENCIA."""
     excel_path = current_app.config["EXCEL_PATH"]
     loader = GraficoPendenciaLoader(excel_path)
     return loader.load_all()

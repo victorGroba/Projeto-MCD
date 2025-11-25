@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
-import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown } from "lucide-react";
+import { ArrowLeft, Filter, TestTube, X, RefreshCw, Check, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-// --- COMPONENTE MULTI-SELECT (Versão Azul Padrão) ---
+// --- COMPONENTE MULTI-SELECT PERSONALIZADO ---
+// Permite selecionar várias opções com checkboxes
 function MultiSelect({ label, options, selectedValues = [], onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
 
+  // Fecha ao clicar fora
   useEffect(() => {
     function handleClickOutside(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
@@ -22,9 +24,9 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
     const current = selectedValues || [];
     let updated;
     if (current.includes(value)) {
-      updated = current.filter((item) => item !== value);
+      updated = current.filter((item) => item !== value); // Remove
     } else {
-      updated = [...current, value];
+      updated = [...current, value]; // Adiciona
     }
     onChange(updated);
   };
@@ -39,15 +41,20 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
         onClick={() => setIsOpen(!isOpen)}
         className={`
           flex items-center justify-between bg-slate-950 border text-xs rounded-lg p-2.5 text-left transition-colors w-full
-          ${selectedValues.length > 0 ? 'border-blue-500 ring-1 ring-blue-500/20 text-white' : 'border-slate-700 text-slate-400 hover:border-slate-600'}
+          ${selectedValues.length > 0 ? 'border-green-500 ring-1 ring-green-500/20 text-white' : 'border-slate-700 text-slate-400 hover:border-slate-600'}
         `}
       >
         <span className="truncate">
-          {selectedValues.length === 0 ? "Todos" : `${selectedValues.length} selecionados`}
+          {selectedValues.length === 0 
+            ? "Todos" 
+            : selectedValues.length === 1 
+              ? selectedValues[0] 
+              : `${selectedValues.length} selecionados`}
         </span>
         <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
+      {/* Dropdown Menu */}
       {isOpen && (
         <div className="absolute top-full left-0 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto p-1">
           {options.map((opt) => {
@@ -58,12 +65,12 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
                 onClick={() => toggleOption(opt)}
                 className={`
                   flex items-center gap-2 px-2 py-2 rounded cursor-pointer text-xs transition-colors
-                  ${isSelected ? 'bg-blue-500/20 text-white' : 'text-slate-400 hover:bg-slate-800'}
+                  ${isSelected ? 'bg-green-500/20 text-white' : 'text-slate-400 hover:bg-slate-800'}
                 `}
               >
                 <div className={`
                   w-4 h-4 rounded border flex items-center justify-center transition-colors
-                  ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}
+                  ${isSelected ? 'bg-green-500 border-green-500' : 'border-slate-600'}
                 `}>
                   {isSelected && <Check size={10} className="text-white" />}
                 </div>
@@ -77,86 +84,62 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
   );
 }
 
-// --- TELA GERAL ---
-export default function TelaGeral() {
+// --- TELA PRINCIPAL ---
+export default function TelaVisa() {
   const navigate = useNavigate();
   const [dados, setDados] = useState([]);
   const [colunas, setColunas] = useState([]);
-  
-  // Opções para os filtros (carregadas separadamente)
   const [opcoesFiltro, setOpcoesFiltro] = useState({});
-  // Mapa de nomes para traduzir o filtro do front para a coluna real do Excel
-  const [nomesColunas, setNomesColunas] = useState({});
   
+  // O estado agora guarda ARRAYS de strings: { regional: ["RJ", "SP"], ... }
   const [filtrosAtivos, setFiltrosAtivos] = useState({});
+  
   const [loading, setLoading] = useState(true);
 
-  // 1. Inicialização: Carrega as opções de filtro
-  useEffect(() => {
-    async function carregarOpcoes() {
-      try {
-        const res = await api.get("/api/filtros-opcoes");
-        
-        // Separa as opções (listas) dos nomes das colunas
-        const opcoes = {};
-        const nomes = {};
-        
-        Object.keys(res.data).forEach(key => {
-          if (key.endsWith("_col_name")) {
-            const nomeFiltro = key.replace("_col_name", "");
-            nomes[nomeFiltro] = res.data[key];
-          } else {
-            opcoes[key] = res.data[key];
-          }
-        });
-
-        setOpcoesFiltro(opcoes);
-        setNomesColunas(nomes);
-        
-        // Carrega os dados iniciais sem filtro
-        fetchDados({}, nomes); 
-      } catch (err) {
-        console.error("Erro ao iniciar Geral:", err);
-        setLoading(false);
-      }
-    }
-    carregarOpcoes();
-  }, []);
-
-  // 2. Busca Dados
-  const fetchDados = async (filtros = {}, mapNomes = nomesColunas) => {
+  const fetchDados = async (filtros = {}) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       
+      // Converte o array ["RJ", "SP"] para string "RJ,SP" antes de enviar
       Object.entries(filtros).forEach(([key, val]) => {
-        // Usa o nome real da coluna se existir no mapa, senão usa a chave direta
-        const colunaReal = mapNomes[key] || key;
-        
         if (Array.isArray(val) && val.length > 0) {
-          params.append(colunaReal, val.join(","));
+          params.append(key, val.join(","));
         } else if (val && !Array.isArray(val)) {
-          params.append(colunaReal, val);
+          params.append(key, val);
         }
       });
 
-      const res = await api.get(`/api/geral?${params.toString()}`);
+      const res = await api.get(`/api/visa?${params.toString()}`);
+      
       setDados(res.data.dados || []);
       setColunas(res.data.colunas || []);
+      
+      if (Object.keys(filtros).length === 0) {
+        setOpcoesFiltro(res.data.opcoes_filtro || {});
+      }
+
     } catch (err) {
-      console.error("Erro ao buscar dados:", err);
+      console.error("Erro VISA:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFiltroChange = (chaveFiltro, novosValores) => {
+  useEffect(() => {
+    fetchDados();
+  }, []);
+
+  // Atualiza o estado quando o usuário marca/desmarca no MultiSelect
+  const handleFiltroChange = (coluna, novosValores) => {
     const novoEstado = { ...filtrosAtivos };
+    
     if (novosValores.length === 0) {
-      delete novoEstado[chaveFiltro];
+      delete novoEstado[coluna]; // Remove se estiver vazio
     } else {
-      novoEstado[chaveFiltro] = novosValores;
+      novoEstado[coluna] = novosValores;
     }
+    
     setFiltrosAtivos(novoEstado);
     fetchDados(novoEstado);
   };
@@ -175,11 +158,11 @@ export default function TelaGeral() {
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2 text-white">
-              <Table className="text-blue-500" />
-              Base de Dados Geral
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <TestTube className="text-green-500" />
+              Coleta de Alimentos (VISA)
             </h1>
-            <p className="text-slate-400 text-sm">Tabela Mestre Diária</p>
+            <p className="text-slate-400 text-sm">Monitoramento de laudos laboratoriais</p>
           </div>
         </div>
         
@@ -195,7 +178,7 @@ export default function TelaGeral() {
 
       <div className="bg-slate-900 p-5 rounded-xl border border-slate-800 mb-6 shadow-lg">
         <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-2">
-          <div className="flex items-center gap-2 text-blue-400 font-semibold text-sm uppercase">
+          <div className="flex items-center gap-2 text-green-400 font-semibold text-sm uppercase">
             <Filter size={16} /> Filtros Múltiplos
           </div>
           {Object.keys(filtrosAtivos).length > 0 && (
@@ -205,15 +188,14 @@ export default function TelaGeral() {
           )}
         </div>
         
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {/* Renderiza os filtros baseados nas opções retornadas pela API */}
-          {Object.keys(opcoesFiltro).map((key) => (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          {Object.keys(opcoesFiltro).map((col) => (
             <MultiSelect
-              key={key}
-              label={key} // Ex: regional, estado, sigla_loja
-              options={opcoesFiltro[key]}
-              selectedValues={filtrosAtivos[key]}
-              onChange={(vals) => handleFiltroChange(key, vals)}
+              key={col}
+              label={col}
+              options={opcoesFiltro[col]}
+              selectedValues={filtrosAtivos[col]}
+              onChange={(vals) => handleFiltroChange(col, vals)}
             />
           ))}
         </div>
@@ -223,7 +205,7 @@ export default function TelaGeral() {
         <div className="overflow-x-auto flex-1">
           {loading ? (
             <div className="flex h-full items-center justify-center text-slate-500">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mr-3"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500 mr-3"></div>
               Carregando...
             </div>
           ) : (

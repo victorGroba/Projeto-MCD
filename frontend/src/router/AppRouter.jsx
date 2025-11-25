@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "../pages/Login";
-import Home from "../pages/Home"; // <--- Nova página Hub
+import Home from "../pages/Home";
 import DashboardCliente from "../pages/DashboardCliente";
 import DashboardOperacional from "../pages/DashboardOperacional";
 import Ranking from "../pages/Ranking";
@@ -9,6 +9,9 @@ import Heatmap from "../pages/Heatmap";
 import PrivateRoute from "./PrivateRoute";
 import TelaGeral from "../pages/TelaGeral";
 import TelaGraficos from "../pages/TelaGraficos";
+// --- NOVOS IMPORTS ---
+import TelaHACCP from "../pages/TelaHACCP";
+import TelaVisa from "../pages/TelaVisa";
 
 export default function AppRouter() {
   return (
@@ -31,7 +34,7 @@ export default function AppRouter() {
           }
         />
 
-        {/* --- NOVAS PÁGINAS DO SISTEMA (Conectadas ao Hub) --- */}
+        {/* --- MÓDULOS PRINCIPAIS --- */}
         <Route
           path="/geral"
           element={
@@ -46,6 +49,25 @@ export default function AppRouter() {
           element={
             <PrivateRoute>
               <TelaGraficos />
+            </PrivateRoute>
+          }
+        />
+
+        {/* --- NOVOS MÓDULOS (HACCP e VISA) --- */}
+        <Route
+          path="/haccp"
+          element={
+            <PrivateRoute>
+              <TelaHACCP />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/visa"
+          element={
+            <PrivateRoute>
+              <TelaVisa />
             </PrivateRoute>
           }
         />

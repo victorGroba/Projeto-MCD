@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request
-from mcdagua.routes.api import load_geral_dataframe as get_dataframe
+# ALTERAÇÃO: Importar diretamente do loader, não da API
+from mcdagua.core.loader import load_geral_dataframe as get_dataframe
 from mcdagua.services.filters import apply_filters
 from mcdagua.services.kpis import calculate_kpis
 from mcdagua.auth.basic import require_auth
