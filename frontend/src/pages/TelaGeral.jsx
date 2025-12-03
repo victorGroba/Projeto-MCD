@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
-import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown } from "lucide-react";
+import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 // --- COMPONENTE MULTI-SELECT (Versão Azul Padrão) ---
@@ -77,27 +77,24 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
   );
 }
 
-// --- TELA GERAL ---
+// --- TELA POTABILIDADE (ANTIGA GERAL) ---
 export default function TelaGeral() {
   const navigate = useNavigate();
   const [dados, setDados] = useState([]);
   const [colunas, setColunas] = useState([]);
   
-  // Opções para os filtros (carregadas separadamente)
   const [opcoesFiltro, setOpcoesFiltro] = useState({});
-  // Mapa de nomes para traduzir o filtro do front para a coluna real do Excel
   const [nomesColunas, setNomesColunas] = useState({});
   
   const [filtrosAtivos, setFiltrosAtivos] = useState({});
   const [loading, setLoading] = useState(true);
 
-  // 1. Inicialização: Carrega as opções de filtro
+  // 1. Inicialização
   useEffect(() => {
     async function carregarOpcoes() {
       try {
         const res = await api.get("/api/filtros-opcoes");
         
-        // Separa as opções (listas) dos nomes das colunas
         const opcoes = {};
         const nomes = {};
         
@@ -112,8 +109,6 @@ export default function TelaGeral() {
 
         setOpcoesFiltro(opcoes);
         setNomesColunas(nomes);
-        
-        // Carrega os dados iniciais sem filtro
         fetchDados({}, nomes); 
       } catch (err) {
         console.error("Erro ao iniciar Geral:", err);
@@ -130,7 +125,6 @@ export default function TelaGeral() {
       const params = new URLSearchParams();
       
       Object.entries(filtros).forEach(([key, val]) => {
-        // Usa o nome real da coluna se existir no mapa, senão usa a chave direta
         const colunaReal = mapNomes[key] || key;
         
         if (Array.isArray(val) && val.length > 0) {
@@ -177,13 +171,22 @@ export default function TelaGeral() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2 text-white">
               <Table className="text-blue-500" />
-              Base de Dados Geral
+              Controle de Potabilidade
             </h1>
-            <p className="text-slate-400 text-sm">Tabela Mestre Diária</p>
+            <p className="text-slate-400 text-sm">Base de dados geral</p>
           </div>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* BOTÃO PARA VER GRÁFICOS */}
+          <button 
+            onClick={() => navigate("/graficos-novo")} 
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm font-medium transition-colors"
+          >
+            <BarChart3 size={18} className="text-purple-400"/>
+            Ver Gráficos
+          </button>
+
           <div className="text-sm text-slate-500 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
             <strong>{dados.length}</strong> registros
           </div>
@@ -206,11 +209,10 @@ export default function TelaGeral() {
         </div>
         
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {/* Renderiza os filtros baseados nas opções retornadas pela API */}
           {Object.keys(opcoesFiltro).map((key) => (
             <MultiSelect
               key={key}
-              label={key} // Ex: regional, estado, sigla_loja
+              label={key}
               options={opcoesFiltro[key]}
               selectedValues={filtrosAtivos[key]}
               onChange={(vals) => handleFiltroChange(key, vals)}

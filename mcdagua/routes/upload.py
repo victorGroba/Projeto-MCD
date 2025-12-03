@@ -1,7 +1,6 @@
 import os
-from flask import Blueprint, request, render_template_string, redirect, url_for, current_app
-from werkzeug.utils import secure_filename
-from mcdagua.auth.basic import require_auth
+from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import jwt_required, get_jwt
 from mcdagua.core.loader import refresh_dataframe
 
 upload_bp = Blueprint("upload", __name__)
@@ -11,43 +10,43 @@ ALLOWED_EXTENSIONS = {"xlsx"}
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
-@upload_bp.route("/upload", methods=["GET", "POST"])
-@require_auth
+@upload_bp.route("/upload", methods=["POST"])
+@jwt_required()  # Exige o Token JWT no Header
 def upload_file():
-    if request.method == "POST":
-        if "file" not in request.files:
-            return "Nenhum arquivo enviado.", 400
+    # 1. Verificação de Permissão (Role)
+    claims = get_jwt()
+    user_role = claims.get("role")
 
-        file = request.files["file"]
+    # Apenas 'admin_mattos' pode fazer upload
+    if user_role != "admin_mattos":
+        return jsonify({"msg": "Acesso negado. Apenas o laboratório pode enviar arquivos."}), 403
 
-        if file.filename == "":
-            return "Nenhum arquivo selecionado.", 400
+    # 2. Validação do Arquivo
+    if "file" not in request.files:
+        return jsonify({"msg": "Nenhum arquivo enviado."}), 400
 
-        if not allowed_file(file.filename):
-            return "Formato inválido. Envie um arquivo .xlsx", 400
+    file = request.files["file"]
 
-        # Caminho configurado no .env
+    if file.filename == "":
+        return jsonify({"msg": "Nenhum arquivo selecionado."}), 400
+
+    if not allowed_file(file.filename):
+        return jsonify({"msg": "Formato inválido. Envie um arquivo .xlsx"}), 400
+
+    try:
+        # 3. Salvar Arquivo
         save_path = current_app.config["EXCEL_PATH"]
-
-        # Salvar sobre o arquivo atual
+        
+        # Garante que o diretório existe
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        
         file.save(save_path)
 
-        # Recarregar planilha imediatamente
+        # 4. Recarregar Dados na Memória
         refresh_dataframe()
 
-        return redirect(url_for("ui.dashboard"))
+        return jsonify({"msg": "Base de dados atualizada com sucesso!"}), 200
 
-    # Tela HTML simples
-    html = """
-    <h2 style='font-family:Arial;margin-top:30px;'>Upload da Planilha</h2>
-    <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".xlsx" required>
-        <br><br>
-        <button style="padding:8px 18px;">Enviar</button>
-    </form>
-    <br>
-    <a href="/">Voltar ao Dashboard</a>
-    """
-
-    return render_template_string(html)
+    except Exception as e:
+        print(f"Erro no upload: {e}")
+        return jsonify({"msg": f"Erro ao salvar arquivo: {str(e)}"}), 500

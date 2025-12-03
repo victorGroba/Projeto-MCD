@@ -1,15 +1,13 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
-import { ArrowLeft, Filter, TestTube, X, RefreshCw, Check, ChevronDown } from "lucide-react";
+import { ArrowLeft, Filter, TestTube, X, RefreshCw, Check, ChevronDown, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 // --- COMPONENTE MULTI-SELECT PERSONALIZADO ---
-// Permite selecionar várias opções com checkboxes
 function MultiSelect({ label, options, selectedValues = [], onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
 
-  // Fecha ao clicar fora
   useEffect(() => {
     function handleClickOutside(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
@@ -24,9 +22,9 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
     const current = selectedValues || [];
     let updated;
     if (current.includes(value)) {
-      updated = current.filter((item) => item !== value); // Remove
+      updated = current.filter((item) => item !== value);
     } else {
-      updated = [...current, value]; // Adiciona
+      updated = [...current, value];
     }
     onChange(updated);
   };
@@ -91,9 +89,7 @@ export default function TelaVisa() {
   const [colunas, setColunas] = useState([]);
   const [opcoesFiltro, setOpcoesFiltro] = useState({});
   
-  // O estado agora guarda ARRAYS de strings: { regional: ["RJ", "SP"], ... }
   const [filtrosAtivos, setFiltrosAtivos] = useState({});
-  
   const [loading, setLoading] = useState(true);
 
   const fetchDados = async (filtros = {}) => {
@@ -101,7 +97,6 @@ export default function TelaVisa() {
     try {
       const params = new URLSearchParams();
       
-      // Converte o array ["RJ", "SP"] para string "RJ,SP" antes de enviar
       Object.entries(filtros).forEach(([key, val]) => {
         if (Array.isArray(val) && val.length > 0) {
           params.append(key, val.join(","));
@@ -130,12 +125,11 @@ export default function TelaVisa() {
     fetchDados();
   }, []);
 
-  // Atualiza o estado quando o usuário marca/desmarca no MultiSelect
   const handleFiltroChange = (coluna, novosValores) => {
     const novoEstado = { ...filtrosAtivos };
     
     if (novosValores.length === 0) {
-      delete novoEstado[coluna]; // Remove se estiver vazio
+      delete novoEstado[coluna];
     } else {
       novoEstado[coluna] = novosValores;
     }
@@ -166,7 +160,16 @@ export default function TelaVisa() {
           </div>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* BOTÃO PARA VER GRÁFICOS */}
+          <button 
+            onClick={() => navigate("/graficos-novo")} 
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm font-medium transition-colors"
+          >
+            <BarChart3 size={18} className="text-purple-400"/>
+            Ver Gráficos
+          </button>
+
           <div className="text-sm text-slate-500 bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
             <strong>{dados.length}</strong> registros
           </div>
