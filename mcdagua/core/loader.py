@@ -3,7 +3,7 @@ from flask import current_app
 from mcdagua.extensions import cache
 
 # ==============================================================================
-# 1. LOADER GERAL (Movido de api.py para corrigir importação circular)
+# 1. LOADER GERAL
 # ==============================================================================
 def load_geral_dataframe():
     path = current_app.config["EXCEL_PATH"]
@@ -30,14 +30,14 @@ def load_geral_dataframe():
         .str.replace(".", "")
     )
 
-    # Remove colunas que não têm nome (geradas por células vazias no header)
+    # Remove colunas que não têm nome
     df = df.loc[:, ~df.columns.str.contains('^unnamed')]
     
-    # Remove colunas/linhas que estão totalmente vazias
+    # Remove colunas/linhas vazias
     df = df.dropna(how="all", axis=1)
     df = df.dropna(how="all", axis=0)
 
-    # Preenche valores nulos com vazio para o JSON não quebrar
+    # Preenche valores nulos
     df = df.fillna("")
 
     return df
@@ -47,12 +47,10 @@ def load_geral_dataframe():
 # ==============================================================================
 
 def load_visa_dataframe():
-    """Carrega a aba 'Consolidado Coletas' da Planilha Mãe."""
     path = current_app.config["EXCEL_PATH"]
     try:
         df = pd.read_excel(path, sheet_name="Consolidado Coletas")
         
-        # Limpeza de nomes das colunas
         df.columns = (
             df.columns
             .str.strip()
@@ -64,7 +62,6 @@ def load_visa_dataframe():
             .str.decode("utf-8")
         )
         
-        # Converte colunas de data para texto
         for col in df.columns:
             if "data" in col:
                 df[col] = df[col].astype(str).replace("NaT", "")
@@ -76,17 +73,13 @@ def load_visa_dataframe():
         return pd.DataFrame()
 
 def load_haccp_dataframe():
-    """Carrega a aba 'HACCP' da Planilha Mãe."""
     path = current_app.config["EXCEL_PATH"]
     try:
-        # header=1 assume que a primeira linha é título e a segunda é o cabeçalho real
         df = pd.read_excel(path, sheet_name="HACCP", header=1)
         
-        # Remove colunas e linhas vazias
         df = df.dropna(how="all", axis=1)
         df = df.dropna(how="all", axis=0)
         
-        # Padronização de colunas
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
         
         df = df.fillna("")
@@ -102,16 +95,14 @@ class GraficoPendenciaLoader:
 
     def __init__(self, excel_path: str):
         self.path = excel_path
-        # Lê sem cabeçalho para garantir acesso por índices numéricos fixos (0, 1, 2...)
         try:
             self.df = pd.read_excel(self.path, sheet_name="GRÁFICO PENDENCIA", header=None)
-            print(f"✅ [LOADER] Planilha carregada. Linhas: {len(self.df)}")
+            # print(f"✅ [LOADER] Planilha carregada. Linhas: {len(self.df)}")
         except Exception as e:
             print(f"❌ [LOADER] Erro ao abrir planilha de gráficos: {e}")
             self.df = pd.DataFrame()
 
     def _ler_bloco_dinamico(self, linha_inicio, col_inicio, num_cols):
-        """Lê o bloco de dados até encontrar linha vazia na coluna de rótulo."""
         dados = []
         linha = linha_inicio
         
@@ -249,8 +240,9 @@ def get_dataframe():
 
 def refresh_dataframe():
     """Limpa o cache para forçar recarregamento."""
-    with current_app.app_context():
-        cache.clear()
+    # --- CORREÇÃO: Removemos o 'with current_app.app_context()' daqui ---
+    # O contexto deve ser provido por quem chama esta função.
+    cache.clear()
 
 def load_all_graphics():
     """Carrega todos os dados da aba GRÁFICO PENDENCIA."""
