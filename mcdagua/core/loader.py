@@ -3,7 +3,7 @@ from flask import current_app
 from mcdagua.extensions import cache
 
 # ==============================================================================
-# 1. LOADER GERAL
+# 1. LOADER GERAL (COM CORREÇÃO DE ESPAÇOS)
 # ==============================================================================
 def load_geral_dataframe():
     path = current_app.config["EXCEL_PATH"]
@@ -15,7 +15,7 @@ def load_geral_dataframe():
         print(f"Erro ao ler Excel (Geral): {e}")
         return pd.DataFrame()
 
-    # Limpeza e Padronização dos Nomes das Colunas
+    # 1. Limpeza e Padronização dos Nomes das Colunas
     df.columns = (
         df.columns
         .str.strip()
@@ -30,15 +30,23 @@ def load_geral_dataframe():
         .str.replace(".", "")
     )
 
-    # Remove colunas que não têm nome
+    # 2. Remove colunas que não têm nome (colunas fantasmas do Excel)
     df = df.loc[:, ~df.columns.str.contains('^unnamed')]
     
-    # Remove colunas/linhas vazias
+    # 3. Remove colunas e linhas que estão completamente vazias
     df = df.dropna(how="all", axis=1)
     df = df.dropna(how="all", axis=0)
 
-    # Preenche valores nulos
+    # 4. Preenche valores nulos para evitar erros no frontend
     df = df.fillna("")
+
+    # ==========================================================================
+    # CORREÇÃO DO BUG DO FILTRO: LIMPEZA PROFUNDA DE TEXTO
+    # Remove espaços invisíveis no início e fim de TODAS as células de texto
+    # Exemplo: " Pendente " vira "Pendente"
+    # ==========================================================================
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = df[col].astype(str).str.strip()
 
     return df
 
@@ -67,6 +75,11 @@ def load_visa_dataframe():
                 df[col] = df[col].astype(str).replace("NaT", "")
         
         df = df.fillna("")
+        
+        # Aplica a mesma limpeza aqui por segurança
+        for col in df.select_dtypes(include=['object']).columns:
+            df[col] = df[col].astype(str).str.strip()
+            
         return df
     except Exception as e:
         print(f"❌ [VISA] Erro ao carregar aba 'Consolidado Coletas': {e}")
@@ -83,6 +96,11 @@ def load_haccp_dataframe():
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
         
         df = df.fillna("")
+        
+        # Aplica a mesma limpeza aqui por segurança
+        for col in df.select_dtypes(include=['object']).columns:
+            df[col] = df[col].astype(str).str.strip()
+
         return df
     except Exception as e:
         print(f"❌ [HACCP] Erro ao carregar aba 'HACCP': {e}")
@@ -97,7 +115,6 @@ class GraficoPendenciaLoader:
         self.path = excel_path
         try:
             self.df = pd.read_excel(self.path, sheet_name="GRÁFICO PENDENCIA", header=None)
-            # print(f"✅ [LOADER] Planilha carregada. Linhas: {len(self.df)}")
         except Exception as e:
             print(f"❌ [LOADER] Erro ao abrir planilha de gráficos: {e}")
             self.df = pd.DataFrame()
@@ -240,8 +257,6 @@ def get_dataframe():
 
 def refresh_dataframe():
     """Limpa o cache para forçar recarregamento."""
-    # --- CORREÇÃO: Removemos o 'with current_app.app_context()' daqui ---
-    # O contexto deve ser provido por quem chama esta função.
     cache.clear()
 
 def load_all_graphics():
