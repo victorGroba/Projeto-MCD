@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
-import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown, BarChart3, Settings2, GripVertical, Search } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown, BarChart3, Settings2, GripVertical, Search, Siren } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom"; // Adicionado useLocation
 
 // --- COMPONENTE MULTI-SELECT MELHORADO ---
 function MultiSelect({ label, options, selectedValues = [], onChange }) {
@@ -117,6 +117,8 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
 // --- TELA GERAL ---
 export default function TelaGeral() {
   const navigate = useNavigate();
+  const location = useLocation(); // Hook para ler o estado vindo da Home
+  
   const [dados, setDados] = useState([]);
   const [todasColunas, setTodasColunas] = useState([]);
   const [colunasOrdenadas, setColunasOrdenadas] = useState([]);
@@ -144,7 +146,31 @@ export default function TelaGeral() {
         });
         setOpcoesFiltro(opcoes);
         setNomesColunas(nomes);
+
+        // --- LÓGICA DO FILTRO PRESETADO (PENDÊNCIAS) ---
+        // Verifica se veio o comando "pendencias" da Home
+        if (location.state?.preset === "pendencias") {
+          console.log("⚡ Aplicando filtro automático de Pendências");
+          
+          // Tenta achar a chave correta para "pendencia"
+          const chavePendencia = Object.keys(nomes).find(k => k.includes("pendencia")) || "pendencia";
+          
+          if (opcoes[chavePendencia]) {
+            // Pega TODAS as opções que NÃO sejam "ok" (case insensitive) e nem vazio
+            const apenasRuins = opcoes[chavePendencia].filter(
+              opt => opt.toLowerCase().trim() !== "ok" && opt.toLowerCase().trim() !== "na" && opt.trim() !== ""
+            );
+            
+            const filtroInicial = { [chavePendencia]: apenasRuins };
+            setFiltrosAtivos(filtroInicial);
+            fetchDados(filtroInicial, nomes);
+            return; // Sai para não buscar duas vezes
+          }
+        }
+
+        // Se não tiver preset, busca normal
         fetchDados({}, nomes); 
+
       } catch (err) {
         console.error("Erro ao iniciar Geral:", err);
         setLoading(false);
@@ -159,7 +185,7 @@ export default function TelaGeral() {
     document.addEventListener("mousedown", handleClickOutside);
     carregarOpcoes();
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [location.state]); // Reage se o estado mudar
 
   const fetchDados = async (filtros = {}, mapNomes = nomesColunas) => {
     setLoading(true);
@@ -193,6 +219,18 @@ export default function TelaGeral() {
     else novoEstado[chaveFiltro] = novosValores;
     setFiltrosAtivos(novoEstado);
     fetchDados(novoEstado);
+  };
+
+  const aplicarFiltroPendenciasManual = () => {
+    const chavePendencia = Object.keys(nomesColunas).find(k => k.includes("pendencia")) || "pendencia";
+    if (opcoesFiltro[chavePendencia]) {
+      const apenasRuins = opcoesFiltro[chavePendencia].filter(
+        opt => opt.toLowerCase().trim() !== "ok" && opt.toLowerCase().trim() !== "na" && opt.trim() !== ""
+      );
+      const novoFiltro = { ...filtrosAtivos, [chavePendencia]: apenasRuins };
+      setFiltrosAtivos(novoFiltro);
+      fetchDados(novoFiltro);
+    }
   };
 
   const limparFiltros = () => {
@@ -248,16 +286,21 @@ export default function TelaGeral() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2 text-blue-400 font-semibold text-xs uppercase tracking-wider">
                 <Filter size={14} /> Filtros de Dados
-                
-                {/* --- CONTADOR DE LINHAS (NOVIDADE) --- */}
                 <span className="ml-2 px-2 py-0.5 bg-slate-800 text-slate-300 border border-slate-700 rounded-full text-[10px] font-normal normal-case">
                   {loading ? 'Carregando...' : `${dados.length} ${dados.length === 1 ? 'registro encontrado' : 'registros encontrados'}`}
                 </span>
-                
               </div>
-              {Object.keys(filtrosAtivos).length > 0 && (
-                <button onClick={limparFiltros} className="text-[10px] flex items-center gap-1 text-red-400 hover:text-red-300 transition bg-red-400/10 px-2 py-1 rounded-full"><X size={12} /> Limpar</button>
-              )}
+              <div className="flex gap-2">
+                {/* BOTÃO RÁPIDO PARA VER PENDÊNCIAS */}
+                <button onClick={aplicarFiltroPendenciasManual} className="text-[10px] flex items-center gap-1 text-orange-400 hover:text-orange-300 transition bg-orange-400/10 border border-orange-400/20 px-2 py-1 rounded-full">
+                  <Siren size={12} /> Ver Pendências
+                </button>
+                {Object.keys(filtrosAtivos).length > 0 && (
+                  <button onClick={limparFiltros} className="text-[10px] flex items-center gap-1 text-red-400 hover:text-red-300 transition bg-red-400/10 border border-red-400/20 px-2 py-1 rounded-full">
+                    <X size={12} /> Limpar
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
               {Object.keys(opcoesFiltro).map((key) => (

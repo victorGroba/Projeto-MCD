@@ -1,8 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
-  BarChart3, ShieldAlert, TestTube, 
-  Menu, Upload, Droplets, LogOut, CheckCircle, AlertCircle, Loader2, Users
+  Menu, Upload, Droplets, LogOut, CheckCircle, AlertCircle, Loader2, Users, ShieldAlert, TestTube, Siren
 } from "lucide-react";
 import { useAuth } from "../store/AuthContext";
 import { api } from "../api/api";
@@ -49,9 +48,12 @@ export default function Home() {
   const isAdmin = role === "admin_mattos";
   const isGerente = role === "gerente_geral";
   
-  // Operacional só vê Potabilidade
-  // Gerente e Admin veem tudo
   const canViewAll = isAdmin || isGerente; 
+
+  // Função para navegar com Filtro Presetado
+  const irParaPendencias = () => {
+    navigate("/potabilidade", { state: { preset: "pendencias" } });
+  };
 
   const menuItems = [
     { 
@@ -63,7 +65,18 @@ export default function Home() {
       bgHover: "group-hover:bg-blue-500", 
       borderHover: "hover:border-blue-500", 
       bgIcon: "bg-blue-500/20", glow: "bg-blue-500/10",
-      visible: true // Todos veem
+      visible: true 
+    },
+    { 
+      title: "Pendências",
+      icon: Siren, // Ícone de Alerta
+      action: irParaPendencias, // Ação personalizada
+      desc: "Lojas com 'Não OK'",
+      color: "text-red-400", 
+      bgHover: "group-hover:bg-red-600", 
+      borderHover: "hover:border-red-600", 
+      bgIcon: "bg-red-500/20", glow: "bg-red-500/10",
+      visible: true // Todos podem ver o que está ruim
     },
     { 
       title: "HACCP", 
@@ -74,7 +87,7 @@ export default function Home() {
       bgHover: "group-hover:bg-orange-500", 
       borderHover: "hover:border-orange-500", 
       bgIcon: "bg-orange-500/20", glow: "bg-orange-500/10",
-      visible: canViewAll // Apenas Gerente/Admin
+      visible: canViewAll 
     },
     { 
       title: "Coleta VISA", 
@@ -85,7 +98,7 @@ export default function Home() {
       bgHover: "group-hover:bg-green-500", 
       borderHover: "hover:border-green-500", 
       bgIcon: "bg-green-500/20", glow: "bg-green-500/10",
-      visible: canViewAll // Apenas Gerente/Admin
+      visible: canViewAll 
     },
     {
       title: "Gestão de Usuários",
@@ -96,7 +109,7 @@ export default function Home() {
       bgHover: "group-hover:bg-purple-500",
       borderHover: "hover:border-purple-500",
       bgIcon: "bg-purple-500/20", glow: "bg-purple-500/10",
-      visible: isAdmin // Apenas Admin
+      visible: isAdmin 
     }
   ];
 
@@ -117,8 +130,12 @@ export default function Home() {
           </div>
 
           <nav className="flex-1 space-y-2">
-            {menuItems.filter(i => i.visible).map((item) => (
-              <button key={item.path} onClick={() => navigate(item.path)} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all group">
+            {menuItems.filter(i => i.visible).map((item, idx) => (
+              <button 
+                key={idx} 
+                onClick={item.action ? item.action : () => navigate(item.path)} 
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all group"
+              >
                 <item.icon size={20} className={`transition-colors ${item.color}`} />
                 <span className="font-medium">{item.title}</span>
               </button>
@@ -159,7 +176,11 @@ export default function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {menuItems.filter(i => i.visible).map((item, idx) => (
-              <div key={idx} onClick={() => navigate(item.path)} className={`bg-slate-900/50 p-6 rounded-2xl border border-slate-800 ${item.borderHover} hover:bg-slate-800/80 cursor-pointer transition-all group relative overflow-hidden`}>
+              <div 
+                key={idx} 
+                onClick={item.action ? item.action : () => navigate(item.path)} 
+                className={`bg-slate-900/50 p-6 rounded-2xl border border-slate-800 ${item.borderHover} hover:bg-slate-800/80 cursor-pointer transition-all group relative overflow-hidden`}
+              >
                 <div className={`absolute top-0 right-0 w-24 h-24 ${item.glow} rounded-full -mr-10 -mt-10 blur-2xl transition-all`}></div>
                 <div className={`mb-4 w-12 h-12 rounded-xl flex items-center justify-center border border-slate-700 ${item.bgIcon} group-hover:shadow-lg transition-all`}>
                   <item.icon className={`${item.color} group-hover:text-white transition-colors`} size={24} />
