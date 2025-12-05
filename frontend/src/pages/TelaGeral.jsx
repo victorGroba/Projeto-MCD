@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
 import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown, BarChart3, Settings2, GripVertical, Search, Siren } from "lucide-react";
-import { useNavigate, useLocation } from "react-router-dom"; // Adicionado useLocation
+import { useNavigate, useLocation } from "react-router-dom";
 
 // --- COMPONENTE MULTI-SELECT MELHORADO ---
 function MultiSelect({ label, options, selectedValues = [], onChange }) {
@@ -117,7 +117,7 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
 // --- TELA GERAL ---
 export default function TelaGeral() {
   const navigate = useNavigate();
-  const location = useLocation(); // Hook para ler o estado vindo da Home
+  const location = useLocation();
   
   const [dados, setDados] = useState([]);
   const [todasColunas, setTodasColunas] = useState([]);
@@ -147,29 +147,36 @@ export default function TelaGeral() {
         setOpcoesFiltro(opcoes);
         setNomesColunas(nomes);
 
-        // --- LÓGICA DO FILTRO PRESETADO (PENDÊNCIAS) ---
-        // Verifica se veio o comando "pendencias" da Home
-        if (location.state?.preset === "pendencias") {
+        // --- LÓGICA DE FILTROS EXTERNOS E PRESETS ---
+        
+        // 1. Veio do Banner Rotativo (Home) com filtro específico de Loja
+        if (location.state?.filtrosIniciais) {
+          console.log("⚡ Aplicando filtro externo:", location.state.filtrosIniciais);
+          const filtrosExternos = location.state.filtrosIniciais;
+          setFiltrosAtivos(filtrosExternos);
+          fetchDados(filtrosExternos, nomes);
+        
+        // 2. Veio do botão "Ver Pendências"
+        } else if (location.state?.preset === "pendencias") {
           console.log("⚡ Aplicando filtro automático de Pendências");
-          
-          // Tenta achar a chave correta para "pendencia"
           const chavePendencia = Object.keys(nomes).find(k => k.includes("pendencia")) || "pendencia";
           
           if (opcoes[chavePendencia]) {
-            // Pega TODAS as opções que NÃO sejam "ok" (case insensitive) e nem vazio
             const apenasRuins = opcoes[chavePendencia].filter(
               opt => opt.toLowerCase().trim() !== "ok" && opt.toLowerCase().trim() !== "na" && opt.trim() !== ""
             );
-            
             const filtroInicial = { [chavePendencia]: apenasRuins };
             setFiltrosAtivos(filtroInicial);
             fetchDados(filtroInicial, nomes);
-            return; // Sai para não buscar duas vezes
+          } else {
+            // Se não achar a coluna, busca tudo
+            fetchDados({}, nomes);
           }
-        }
 
-        // Se não tiver preset, busca normal
-        fetchDados({}, nomes); 
+        // 3. Acesso normal (sem filtros)
+        } else {
+          fetchDados({}, nomes); 
+        }
 
       } catch (err) {
         console.error("Erro ao iniciar Geral:", err);
@@ -185,7 +192,7 @@ export default function TelaGeral() {
     document.addEventListener("mousedown", handleClickOutside);
     carregarOpcoes();
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [location.state]); // Reage se o estado mudar
+  }, [location.state]); 
 
   const fetchDados = async (filtros = {}, mapNomes = nomesColunas) => {
     setLoading(true);

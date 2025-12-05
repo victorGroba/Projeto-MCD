@@ -4,10 +4,57 @@ import { api } from "../api/api";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
-  Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend,
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Tooltip,
+  Legend,
 } from "chart.js";
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend);
+// --- PLUGIN CUSTOMIZADO PARA EXIBIR VALORES ---
+const drawValuesPlugin = {
+  id: "drawValues",
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+
+    chart.data.datasets.forEach((dataset, i) => {
+      const meta = chart.getDatasetMeta(i);
+      if (meta.hidden) return;
+
+      meta.data.forEach((element, index) => {
+        const value = dataset.data[index];
+        
+        // Só desenha se houver valor e for maior que 0 (opcional, pode remover a checagem de > 0 se quiser mostrar zeros)
+        if (value !== null && value !== undefined && value !== 0) {
+          ctx.save();
+          ctx.fillStyle = "#ffffff"; // Cor do texto (Branco)
+          ctx.font = "bold 10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+
+          // Posição: X no centro da barra/ponto, Y um pouco acima
+          ctx.fillText(value, element.x, element.y - 5);
+          ctx.restore();
+        }
+      });
+    });
+  },
+};
+
+// Registra os componentes e o plugin novo
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Tooltip,
+  Legend,
+  drawValuesPlugin // <--- Adicionado aqui
+);
 
 // Ordem cronológica correta para forçar a ordenação dos meses
 const ORDEM_MESES = [
@@ -50,29 +97,23 @@ export default function TelaGraficos() {
     const labels = apiData.status || apiData.regional || apiData.regionais || apiData.meses || [];
     
     // --- NOVA LÓGICA DE ORDENAÇÃO ---
-    // Pega as chaves (ex: "janeiro", "fevereiro" ou "BRA", "RSOU")
     let keys = Object.keys(apiData.valores);
-
-    // Verifica se as chaves são meses para aplicar a ordenação cronológica
     const saoMeses = keys.some(k => ORDEM_MESES.includes(k.toLowerCase().trim()));
 
     if (saoMeses) {
       keys.sort((a, b) => {
         const idxA = ORDEM_MESES.indexOf(a.toLowerCase().trim());
         const idxB = ORDEM_MESES.indexOf(b.toLowerCase().trim());
-        // Se não encontrar o mês (ex: -1), joga pro final. Se encontrar, ordena pelo índice.
         return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
       });
     }
-    // --------------------------------
 
-    // Paleta de Cores (Excel Standard)
+    // Paleta de Cores
     const excelColors = [
       "#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", 
       "#5B9BD5", "#70AD47", "#264478", "#9E480E", 
     ];
 
-    // Gera os datasets AGORA NA ORDEM CERTA (baseado em 'keys' ordenado)
     const datasets = keys.map((key, index) => ({
       label: key, 
       data: apiData.valores[key],
@@ -88,6 +129,11 @@ export default function TelaGraficos() {
   const commonOptions = {
     maintainAspectRatio: false,
     responsive: true,
+    layout: {
+      padding: {
+        top: 25, // <--- Adicionado padding no topo para o número não cortar
+      }
+    },
     plugins: { 
       legend: { 
         position: 'top', 
@@ -141,7 +187,7 @@ export default function TelaGraficos() {
           </div>
         </div>
 
-        {/* 2. REGIONAL (Este é o gráfico que estava com a ordem errada) */}
+        {/* 2. REGIONAL */}
         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg col-span-1 lg:col-span-2">
           <h2 className="text-lg font-bold mb-4 text-center text-white">Pendência restaurante por regional</h2>
           <div className="h-96">
