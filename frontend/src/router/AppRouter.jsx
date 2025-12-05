@@ -7,12 +7,13 @@ import PrivateRoute from "./PrivateRoute";
 import TelaGeral from "../pages/TelaGeral";
 import TelaGraficos from "../pages/TelaGraficos";
 import TelaHACCP from "../pages/TelaHACCP";
+import TelaGraficosHACCP from "../pages/TelaGraficosHACCP"; // <--- NOVO IMPORT
 import TelaVisa from "../pages/TelaVisa";
 
-// Página de Administração (NOVO)
+// Página de Administração
 import AdminUsers from "../pages/AdminUsers";
 
-// Páginas Legado (Mantenha se ainda usar, senão pode limpar)
+// Páginas Legado
 import DashboardCliente from "../pages/DashboardCliente";
 import DashboardOperacional from "../pages/DashboardOperacional";
 import Ranking from "../pages/Ranking";
@@ -72,8 +73,18 @@ export default function AppRouter() {
             </PrivateRoute>
           }
         />
+        
+        {/* --- NOVA ROTA DE GRÁFICOS HACCP --- */}
+        <Route
+          path="/graficos-haccp"
+          element={
+            <PrivateRoute>
+              <TelaGraficosHACCP />
+            </PrivateRoute>
+          }
+        />
 
-        {/* --- ROTA DE ADMINISTRAÇÃO (CORREÇÃO AQUI) --- */}
+        {/* --- ROTA DE ADMINISTRAÇÃO --- */}
         <Route
           path="/admin-users"
           element={

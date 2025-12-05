@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
-  Menu, Upload, Droplets, LogOut, CheckCircle, AlertCircle, Loader2, Users, ShieldAlert, TestTube, Siren, ChevronRight, ChevronLeft, MapPin, User
+  Menu, Upload, Droplets, LogOut, CheckCircle, AlertCircle, Loader2, Users, ShieldAlert, TestTube, Siren, ChevronRight, ChevronLeft, MapPin, User, FileText, Clock
 } from "lucide-react";
 import { useAuth } from "../store/AuthContext";
 import { api } from "../api/api";
@@ -15,6 +15,9 @@ export default function Home() {
   // Estados Upload
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState(null);
+  const [uploadType, setUploadType] = useState("geral");
+  const [fileStatus, setFileStatus] = useState(null);
+  
   const fileInputRef = useRef(null);
 
   // --- ESTADOS DO CARROSSEL DE PENDÊNCIAS ---
@@ -30,7 +33,7 @@ export default function Home() {
   });
   
   const scrollRef = useRef(null);
-  const scrollPosRef = useRef(0); // Rastreia a posição exata (float) para evitar arredondamento
+  const scrollPosRef = useRef(0);
 
   // --- FUNÇÃO AUXILIAR PARA ENCONTRAR COLUNAS ---
   const encontrarColuna = (item, possiveisNomes) => {
@@ -39,6 +42,11 @@ export default function Home() {
     const encontrada = possiveisNomes.find(nome => keys.includes(nome));
     return encontrada || possiveisNomes[0];
   };
+
+  const role = user?.role || "operacional";
+  const isAdmin = role === "admin_mattos";
+  const isGerente = role === "gerente_geral";
+  const canViewAll = isAdmin || isGerente; 
 
   // --- BUSCA DADOS ---
   useEffect(() => {
@@ -69,11 +77,27 @@ export default function Home() {
       } finally {
         setLoadingPendencias(false);
       }
+
+      if (isAdmin) {
+        try {
+          const resStatus = await api.get("/api/status-arquivos");
+          setFileStatus(resStatus.data);
+        } catch (err) {
+          console.error("Erro ao buscar status de arquivos:", err);
+        }
+      }
     }
     fetchDashboardData();
-  }, []);
+  }, [isAdmin]);
 
-  // --- ANIMAÇÃO FLUIDA (TICKER INFINITO) ---
+  const refreshStatus = async () => {
+      try {
+        const res = await api.get("/api/status-arquivos");
+        setFileStatus(res.data);
+      } catch(e) {}
+  };
+
+  // --- ANIMAÇÃO FLUIDA (TICKER AUTOMÁTICO) ---
   useEffect(() => {
     const scrollContainer = scrollRef.current;
     if (!scrollContainer || pendencias.length === 0) return;
@@ -82,35 +106,66 @@ export default function Home() {
 
     const scrollStep = () => {
       if (!isPaused && scrollContainer) {
-        // Velocidade do scroll (ajuste o valor 0.5 para mais rápido ou mais lento)
         scrollPosRef.current += 0.8; 
-
-        // Lógica de Loop Infinito:
-        // Se a posição atual for maior que a metade do conteúdo (já que duplicamos a lista),
-        // resetamos para 0. Isso cria a ilusão de infinito sem "pulo" visual.
+        
+        // Loop infinito
         if (scrollPosRef.current >= scrollContainer.scrollWidth / 2) {
           scrollPosRef.current = 0;
         }
-
+        
         scrollContainer.scrollLeft = scrollPosRef.current;
       }
       animationFrameId = requestAnimationFrame(scrollStep);
     };
 
     animationFrameId = requestAnimationFrame(scrollStep);
-
     return () => cancelAnimationFrame(animationFrameId);
   }, [pendencias, isPaused]);
 
-  // --- CONTROLES MANUAIS ---
+  // --- NOVO: SCROLL MANUAL COM MOUSE (TRAVANDO A TELA) ---
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const handleWheelNative = (e) => {
+      // 1. Impede o scroll vertical da página
+      e.preventDefault();
+
+      // 2. Calcula o movimento (aceita tanto roda vertical quanto horizontal do mouse)
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      
+      // 3. Aplica o movimento ao scroll horizontal
+      scrollPosRef.current += delta;
+
+      // 4. Lógica de limites e loop infinito
+      if (scrollPosRef.current < 0) {
+        scrollPosRef.current = 0;
+      } 
+      // Se passar da metade (onde o conteúdo se repete), volta pro início para dar efeito infinito
+      else if (scrollPosRef.current >= container.scrollWidth / 2) {
+        scrollPosRef.current = 0;
+      }
+
+      container.scrollLeft = scrollPosRef.current;
+    };
+
+    // Adiciona o evento como "não passivo" para permitir o preventDefault()
+    container.addEventListener("wheel", handleWheelNative, { passive: false });
+
+    return () => {
+      container.removeEventListener("wheel", handleWheelNative);
+    };
+  }, [pendencias]); // Recria se a lista mudar
+
+  // --- CONTROLES MANUAIS (SETINHAS) ---
   const scrollManual = (direction) => {
     if (scrollRef.current) {
       const amount = direction === "left" ? -350 : 350;
-      // Atualiza também a referência da posição para não "voltar" depois
       scrollPosRef.current += amount; 
-      // Proteção para não ficar negativo
-      if (scrollPosRef.current < 0) scrollPosRef.current = 0;
       
+      if (scrollPosRef.current < 0) scrollPosRef.current = 0;
+      if (scrollPosRef.current >= scrollRef.current.scrollWidth / 2) scrollPosRef.current = 0;
+
       scrollRef.current.scrollTo({ left: scrollPosRef.current, behavior: "smooth" });
     }
   };
@@ -128,10 +183,10 @@ export default function Home() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      await api.post("/upload", formData, { headers: { "Content-Type": "multipart/form-data" } });
-      setUploadMsg({ type: "success", text: "Atualizado com sucesso!" });
+      await api.post(`/upload/${uploadType}`, formData, { headers: { "Content-Type": "multipart/form-data" } });
+      setUploadMsg({ type: "success", text: `Base ${uploadType.toUpperCase()} atualizada!` });
       setTimeout(() => setUploadMsg(null), 3000);
-      window.location.reload(); 
+      refreshStatus(); 
     } catch (error) {
       setUploadMsg({ type: "error", text: error.response?.data?.msg || "Erro no upload." });
     } finally {
@@ -140,7 +195,10 @@ export default function Home() {
     }
   };
 
-  const triggerFileInput = () => fileInputRef.current?.click();
+  const triggerUpload = (type) => {
+    setUploadType(type);
+    fileInputRef.current?.click();
+  }
 
   const irParaLoja = (item) => {
     const valorSigla = item[mapaColunas.sigla];
@@ -151,16 +209,10 @@ export default function Home() {
     });
   };
 
-  const role = user?.role || "operacional";
-  const isAdmin = role === "admin_mattos";
-  const isGerente = role === "gerente_geral";
-  const canViewAll = isAdmin || isGerente; 
-
   const irParaPendencias = () => {
     navigate("/potabilidade", { state: { preset: "pendencias" } });
   };
 
-  // Lista duplicada para o efeito de loop infinito
   const listaInfinita = [...pendencias, ...pendencias];
 
   const menuItems = [
@@ -275,7 +327,6 @@ export default function Home() {
                       </h3>
                    </div>
                    
-                   {/* Controles Manuais */}
                    <div className="flex gap-2 opacity-0 group-hover/carousel:opacity-100 transition-opacity">
                       <button onClick={() => scrollManual("left")} className="p-1 bg-slate-800 rounded hover:bg-slate-700 text-slate-300 cursor-pointer z-20">
                         <ChevronLeft size={20} />
@@ -288,13 +339,13 @@ export default function Home() {
 
                 <div 
                   ref={scrollRef}
-                  className="flex gap-4 overflow-x-hidden pb-4" // Usei overflow-x-hidden para esconder a barra mas permitir o scroll via JS
-                  style={{ whiteSpace: 'nowrap' }} // Garante que fiquem em linha
+                  className="flex gap-4 overflow-x-hidden pb-4" 
+                  style={{ whiteSpace: 'nowrap' }}
+                  /* onWheel={handleWheel} -> REMOVIDO DAQUI */
                 >
-                  {/* Renderiza a lista DUAS vezes para o efeito de loop */}
                   {listaInfinita.map((item, i) => (
                     <div 
-                      key={i} // Em produção idealmente usar id único, mas aqui o index serve para visualização
+                      key={i} 
                       onClick={() => irParaLoja(item)}
                       className="min-w-[280px] md:min-w-[320px] bg-gradient-to-br from-slate-900 to-slate-900 border border-l-4 border-slate-800 border-l-red-500 hover:border-red-500/50 p-5 rounded-xl cursor-pointer group transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-red-900/10 relative overflow-hidden inline-block whitespace-normal align-top"
                     >
@@ -350,16 +401,71 @@ export default function Home() {
             <div className="mt-12">
               <div className="bg-gradient-to-br from-blue-900/20 to-slate-900 p-8 rounded-3xl border border-blue-500/20 relative overflow-hidden">
                 <div className="relative z-10">
-                  <h3 className="text-xl font-bold text-blue-100 mb-2">Administração de Dados</h3>
-                  <p className="text-blue-200/60 mb-6 text-sm max-w-md">Atualizar planilha consolidada.</p>
+                  <h3 className="text-xl font-bold text-blue-100 mb-6">Administração de Dados</h3>
+                  
+                  {/* --- STATUS DOS ARQUIVOS --- */}
+                  {fileStatus && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                      {["geral", "visa", "haccp"].map((key) => {
+                        const info = fileStatus[key];
+                        if (!info) return null;
+                        
+                        const colors = {
+                          geral: "text-blue-400 border-blue-500/30 bg-blue-500/5",
+                          visa: "text-green-400 border-green-500/30 bg-green-500/5",
+                          haccp: "text-orange-400 border-orange-500/30 bg-orange-500/5"
+                        }[key];
+
+                        return (
+                          <div key={key} className={`p-4 rounded-xl border ${colors} flex flex-col gap-2`}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold uppercase tracking-wider opacity-80">{info.label}</span>
+                              {info.existe ? 
+                                <CheckCircle size={14} className="text-green-500" /> : 
+                                <AlertCircle size={14} className="text-red-500" />
+                              }
+                            </div>
+                            
+                            <div className="flex items-center gap-2" title={info.nome_arquivo}>
+                              <FileText size={16} className="opacity-70" />
+                              <span className="text-sm font-medium truncate text-slate-200">
+                                {info.nome_arquivo}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-[10px] opacity-60 mt-1">
+                              <Clock size={12} />
+                              <span>{info.ultima_modificacao}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <p className="text-blue-200/60 mb-4 text-sm">Selecione uma base para atualizar:</p>
+                  
                   <div className="flex flex-col gap-4">
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap gap-4">
+                      {/* Input invisível */}
                       <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx" className="hidden" />
-                      <button onClick={triggerFileInput} disabled={uploading} className={`bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg shadow-blue-900/20 ${uploading ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                        {uploading ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} />}
-                        {uploading ? "Enviando..." : "Fazer Upload"}
+                      
+                      <button onClick={() => triggerUpload('geral')} disabled={uploading} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg shadow-blue-900/20">
+                        {uploading && uploadType === 'geral' ? <Loader2 className="animate-spin" size={18}/> : <Droplets size={18} />}
+                        Upload Potabilidade
+                      </button>
+
+                      <button onClick={() => triggerUpload('visa')} disabled={uploading} className="bg-green-600 hover:bg-green-500 text-white px-4 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg shadow-green-900/20">
+                        {uploading && uploadType === 'visa' ? <Loader2 className="animate-spin" size={18}/> : <TestTube size={18} />}
+                        Upload VISA
+                      </button>
+
+                      <button onClick={() => triggerUpload('haccp')} disabled={uploading} className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg shadow-orange-900/20">
+                        {uploading && uploadType === 'haccp' ? <Loader2 className="animate-spin" size={18}/> : <ShieldAlert size={18} />}
+                        Upload HACCP
                       </button>
                     </div>
+                    
                     {uploadMsg && (
                       <div className={`flex items-center gap-2 text-sm p-3 rounded-lg max-w-md ${uploadMsg.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                         {uploadMsg.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}

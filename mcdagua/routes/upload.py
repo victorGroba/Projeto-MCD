@@ -10,42 +10,49 @@ ALLOWED_EXTENSIONS = {"xlsx"}
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@upload_bp.route("/upload", methods=["POST"])
-@jwt_required()  # Exige o Token JWT no Header
-def upload_file():
-    # 1. Verificação de Permissão (Role)
+@upload_bp.route("/upload/<tipo_arquivo>", methods=["POST"])
+@jwt_required()
+def upload_file(tipo_arquivo):
+    # 1. Verificação de Permissão
     claims = get_jwt()
-    user_role = claims.get("role")
-
-    # Apenas 'admin_mattos' pode fazer upload
-    if user_role != "admin_mattos":
-        return jsonify({"msg": "Acesso negado. Apenas o laboratório pode enviar arquivos."}), 403
+    if claims.get("role") != "admin_mattos":
+        return jsonify({"msg": "Acesso negado."}), 403
 
     # 2. Validação do Arquivo
     if "file" not in request.files:
         return jsonify({"msg": "Nenhum arquivo enviado."}), 400
 
     file = request.files["file"]
-
     if file.filename == "":
         return jsonify({"msg": "Nenhum arquivo selecionado."}), 400
 
     if not allowed_file(file.filename):
         return jsonify({"msg": "Formato inválido. Envie um arquivo .xlsx"}), 400
 
+    # 3. Define onde salvar
+    if tipo_arquivo == "geral":
+        save_path = current_app.config.get("PATH_GERAL")
+    elif tipo_arquivo == "visa":
+        save_path = current_app.config.get("PATH_VISA")
+    elif tipo_arquivo == "haccp":
+        save_path = current_app.config.get("PATH_HACCP")
+    else:
+        return jsonify({"msg": "Tipo de arquivo inválido."}), 400
+
+    if not save_path:
+        return jsonify({"msg": f"Caminho não configurado para {tipo_arquivo}."}), 500
+
     try:
-        # 3. Salvar Arquivo
-        save_path = current_app.config["EXCEL_PATH"]
-        
         # Garante que o diretório existe
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         
+        # Salva o arquivo sobrescrevendo o antigo
         file.save(save_path)
 
-        # 4. Recarregar Dados na Memória
+        # Limpa cache
         refresh_dataframe()
 
-        return jsonify({"msg": "Base de dados atualizada com sucesso!"}), 200
+        return jsonify({"msg": f"Arquivo {tipo_arquivo.upper()} atualizado com sucesso!"}), 200
 
     except Exception as e:
         print(f"Erro no upload: {e}")

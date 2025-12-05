@@ -3,19 +3,34 @@ from flask import current_app
 from mcdagua.extensions import cache
 
 # ==============================================================================
-# 1. LOADER GERAL (COM CORREÇÃO DE ESPAÇOS)
+# 1. LOADER GERAL (POTABILIDADE)
 # ==============================================================================
 def load_geral_dataframe():
-    path = current_app.config["EXCEL_PATH"]
-
-    try:
-        # header=1 : Pula a primeira linha (Título) e usa a segunda como cabeçalho
-        df = pd.read_excel(path, sheet_name="GERAL", header=1)
-    except Exception as e:
-        print(f"Erro ao ler Excel (Geral): {e}")
+    """
+    Carrega a planilha de Potabilidade (Geral).
+    Lê a configuração 'PATH_GERAL' do .env.
+    """
+    path = current_app.config.get("PATH_GERAL")
+    
+    if not path:
+        print("⚠️ [LOADER] PATH_GERAL não configurado.")
         return pd.DataFrame()
 
-    # 1. Limpeza e Padronização dos Nomes das Colunas
+    try:
+        # Tenta ler a aba "GERAL" com header na linha 2 (índice 1)
+        df = pd.read_excel(path, sheet_name="GERAL", header=1)
+    except ValueError:
+        # Fallback: Se não achar a aba "GERAL", tenta ler a primeira aba
+        try:
+            df = pd.read_excel(path, header=1)
+        except Exception as e:
+            print(f"❌ [GERAL] Erro crítico ao ler arquivo: {e}")
+            return pd.DataFrame()
+    except Exception as e:
+        print(f"❌ [GERAL] Erro ao carregar: {e}")
+        return pd.DataFrame()
+
+    # --- LIMPEZA E PADRONIZAÇÃO ---
     df.columns = (
         df.columns
         .str.strip()
@@ -30,32 +45,32 @@ def load_geral_dataframe():
         .str.replace(".", "")
     )
 
-    # 2. Remove colunas que não têm nome (colunas fantasmas do Excel)
     df = df.loc[:, ~df.columns.str.contains('^unnamed')]
-    
-    # 3. Remove colunas e linhas que estão completamente vazias
     df = df.dropna(how="all", axis=1)
     df = df.dropna(how="all", axis=0)
-
-    # 4. Preenche valores nulos para evitar erros no frontend
     df = df.fillna("")
 
-    # ==========================================================================
-    # CORREÇÃO DO BUG DO FILTRO: LIMPEZA PROFUNDA DE TEXTO
-    # Remove espaços invisíveis no início e fim de TODAS as células de texto
-    # Exemplo: " Pendente " vira "Pendente"
-    # ==========================================================================
     for col in df.select_dtypes(include=['object']).columns:
         df[col] = df[col].astype(str).str.strip()
 
     return df
 
-# ==============================================================================
-# 2. LOADERS DOS NOVOS MÓDULOS (VISA e HACCP)
-# ==============================================================================
 
+# ==============================================================================
+# 2. LOADER VISA (COLETA DE ALIMENTOS)
+# ==============================================================================
 def load_visa_dataframe():
-    path = current_app.config["EXCEL_PATH"]
+    """
+    Carrega a planilha da VISA.
+    Lê a configuração 'PATH_VISA' do .env.
+    Aba esperada: 'Consolidado Coletas'
+    """
+    path = current_app.config.get("PATH_VISA")
+
+    if not path:
+        print("⚠️ [LOADER] PATH_VISA não configurado.")
+        return pd.DataFrame()
+
     try:
         df = pd.read_excel(path, sheet_name="Consolidado Coletas")
         
@@ -72,58 +87,82 @@ def load_visa_dataframe():
         
         for col in df.columns:
             if "data" in col:
-                df[col] = df[col].astype(str).replace("NaT", "")
+                df[col] = pd.to_datetime(df[col], errors='coerce').astype(str).replace("NaT", "")
         
         df = df.fillna("")
         
-        # Aplica a mesma limpeza aqui por segurança
         for col in df.select_dtypes(include=['object']).columns:
             df[col] = df[col].astype(str).str.strip()
             
         return df
+
     except Exception as e:
         print(f"❌ [VISA] Erro ao carregar aba 'Consolidado Coletas': {e}")
         return pd.DataFrame()
 
-def load_haccp_dataframe():
-    path = current_app.config["EXCEL_PATH"]
-    try:
-        df = pd.read_excel(path, sheet_name="HACCP", header=1)
-        
-        df = df.dropna(how="all", axis=1)
-        df = df.dropna(how="all", axis=0)
-        
-        df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
-        
-        df = df.fillna("")
-        
-        # Aplica a mesma limpeza aqui por segurança
-        for col in df.select_dtypes(include=['object']).columns:
-            df[col] = df[col].astype(str).str.strip()
 
-        return df
-    except Exception as e:
-        print(f"❌ [HACCP] Erro ao carregar aba 'HACCP': {e}")
+# ==============================================================================
+# 3. LOADER HACCP (TABELA GERAL)
+# ==============================================================================
+def load_haccp_dataframe():
+    """
+    Carrega a planilha de HACCP (Tabela de Dados).
+    Lê a configuração 'PATH_HACCP' do .env.
+    Aba esperada: 'GERAL' (conforme seu arquivo 'Planilha Controle - HACCP.xlsx')
+    """
+    path = current_app.config.get("PATH_HACCP")
+
+    if not path:
+        print("⚠️ [LOADER] PATH_HACCP não configurado.")
         return pd.DataFrame()
 
+    try:
+        # Tenta ler a aba "GERAL" com header na linha 2 (índice 1)
+        df = pd.read_excel(path, sheet_name="GERAL", header=1)
+        
+    except ValueError:
+        try:
+            print("⚠️ [HACCP] Aba 'GERAL' não encontrada, tentando 'HACCP'...")
+            df = pd.read_excel(path, sheet_name="HACCP", header=1)
+        except Exception as e:
+            print(f"❌ [HACCP] Erro crítico: Nem aba 'GERAL' nem 'HACCP' encontradas: {e}")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        print(f"❌ [HACCP] Erro ao ler arquivo: {e}")
+        return pd.DataFrame()
+
+    df = df.dropna(how="all", axis=1)
+    df = df.dropna(how="all", axis=0)
+    
+    df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+    
+    df = df.fillna("")
+    
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = df[col].astype(str).str.strip()
+
+    return df
+
+
 # ==============================================================================
-# 3. CLASSE DE CARREGAMENTO DE GRÁFICOS (LEGADO)
+# 4. CLASSE DE GRÁFICOS (LEGADO / GERAL)
 # ==============================================================================
 class GraficoPendenciaLoader:
-
-    def __init__(self, excel_path: str):
-        self.path = excel_path
+    def __init__(self):
+        # Assume-se que os gráficos gerais vêm da planilha de Potabilidade (Geral)
+        self.path = current_app.config.get("PATH_GERAL")
         try:
             self.df = pd.read_excel(self.path, sheet_name="GRÁFICO PENDENCIA", header=None)
         except Exception as e:
-            print(f"❌ [LOADER] Erro ao abrir planilha de gráficos: {e}")
+            print(f"❌ [GRÁFICOS] Erro ao abrir aba 'GRÁFICO PENDENCIA' do arquivo Geral: {e}")
             self.df = pd.DataFrame()
 
     def _ler_bloco_dinamico(self, linha_inicio, col_inicio, num_cols):
         dados = []
         linha = linha_inicio
         
-        if linha >= len(self.df):
+        if self.df.empty or linha >= len(self.df):
             return dados
         
         while linha < len(self.df):
@@ -139,6 +178,7 @@ class GraficoPendenciaLoader:
 
     def load_pendencia_anual(self):
         try:
+            if self.df.empty: return pd.DataFrame()
             anos = list(self.df.iloc[2, 8:11]) 
             cols = ["mes"] + [str(a) for a in anos]
             dados = self._ler_bloco_dinamico(3, 7, 3)
@@ -148,6 +188,7 @@ class GraficoPendenciaLoader:
 
     def load_pendencia_regional(self):
         try:
+            if self.df.empty: return pd.DataFrame()
             ROW_HEADER = 20
             ROW_DATA   = 21
             COL_NAMES  = 6
@@ -175,6 +216,7 @@ class GraficoPendenciaLoader:
 
     def load_backroom(self):
         try:
+            if self.df.empty: return pd.DataFrame()
             ROW_HEADER = 35
             ROW_DATA   = 36
             COL_NAMES  = 6
@@ -202,6 +244,7 @@ class GraficoPendenciaLoader:
 
     def load_gelo(self):
         try:
+            if self.df.empty: return pd.DataFrame()
             categorias = []
             c = 8
             while c < len(self.df.columns) and pd.notna(self.df.iloc[49, c]):
@@ -221,6 +264,7 @@ class GraficoPendenciaLoader:
 
     def load_pendencias_gelo(self):
         try:
+            if self.df.empty: return pd.DataFrame()
             categorias = []
             c = 8
             while c < len(self.df.columns) and pd.notna(self.df.iloc[64, c]):
@@ -247,8 +291,9 @@ class GraficoPendenciaLoader:
             "pendencias_gelo": self.load_pendencias_gelo()
         }
 
+
 # ==============================================================================
-# 4. FUNÇÕES HELPER EXPORTADAS
+# 5. FUNÇÕES HELPER EXPORTADAS
 # ==============================================================================
 
 def get_dataframe():
@@ -258,9 +303,80 @@ def get_dataframe():
 def refresh_dataframe():
     """Limpa o cache para forçar recarregamento."""
     cache.clear()
+    print("🧹 [CACHE] Cache limpo. Próxima requisição recarregará os arquivos.")
 
 def load_all_graphics():
-    """Carrega todos os dados da aba GRÁFICO PENDENCIA."""
-    excel_path = current_app.config["EXCEL_PATH"]
-    loader = GraficoPendenciaLoader(excel_path)
+    """Carrega todos os dados da aba GRÁFICO PENDENCIA da planilha Geral."""
+    loader = GraficoPendenciaLoader()
     return loader.load_all()
+
+
+# ==============================================================================
+# 6. LOADER ESPECÍFICO PARA GRÁFICOS HACCP (CORREÇÃO: 10 COLUNAS A-J)
+# ==============================================================================
+def load_haccp_graphics_data():
+    """
+    Carrega dados da aba 'GRÁFICO' do arquivo HACCP.
+    Inclui: Tabelas dinâmicas e tabela fixa de Não Conformidades (A23:J24).
+    """
+    path = current_app.config.get("PATH_HACCP")
+    if not path: return {}
+
+    try:
+        # Lê a aba GRÁFICO sem cabeçalho para mapear posições
+        df = pd.read_excel(path, sheet_name="GRÁFICO", header=None)
+        
+        resultados = {
+            "regional": {}, 
+            "consultor": {},
+            "nao_conformidades": {} 
+        }
+
+        # --- 1. Lógica das Tabelas Dinâmicas (Regional e Consultor) ---
+        def extrair_tabela(start_row, start_col):
+            dados = {}
+            row = start_row + 1 
+            while row < len(df):
+                chave = df.iloc[row, start_col]
+                valor = df.iloc[row, start_col + 1]
+                # Para quando acabar os dados ou chegar no Total Geral
+                if pd.isna(chave) or str(chave).strip() == "" or str(chave).lower() == "total geral":
+                    break
+                dados[str(chave).strip()] = valor
+                row += 1
+            return dados
+
+        # Procura "Rótulos de Linha" nas primeiras 20x20 células
+        for r in range(min(20, len(df))):
+            for c in range(min(20, len(df.columns))):
+                cell = str(df.iloc[r, c]).strip()
+                if cell == "Rótulos de Linha":
+                    # Se estiver na esquerda (coluna < 5), assume Consultor
+                    if c < 5: 
+                        resultados["consultor"] = extrair_tabela(r, c)
+                    else:
+                        resultados["regional"] = extrair_tabela(r, c)
+
+        # --- 2. Lógica da Tabela Fixa A23:J24 (Não Conformidades - 10 colunas) ---
+        try:
+            # Verifica se existem linhas suficientes para acessar a linha 24 (índice 23)
+            if len(df) >= 24:
+                # Linha 23 (índice 22) = Cabeçalhos
+                # Linha 24 (índice 23) = Valores
+                
+                # Lê das colunas A (0) até J (9) = 10 colunas no total
+                # Slice [22, 0:10]
+                headers = df.iloc[22, 0:10] 
+                values = df.iloc[23, 0:10]  
+                
+                for h, v in zip(headers, values):
+                    if pd.notna(h) and str(h).strip() != "":
+                        resultados["nao_conformidades"][str(h).strip()] = v
+        except Exception as e:
+            print(f"⚠️ [HACCP] Erro ao ler tabela de não conformidades (A23:J24): {e}")
+
+        return resultados
+
+    except Exception as e:
+        print(f"❌ [HACCP GRAPHICS] Erro ao ler aba GRÁFICO: {e}")
+        return {}

@@ -161,9 +161,9 @@ export default function TelaHACCP() {
         </div>
         
         <div className="flex items-center gap-3">
-          {/* BOTÃO PARA VER GRÁFICOS */}
+          {/* BOTÃO PARA VER GRÁFICOS (ATUALIZADO) */}
           <button 
-            onClick={() => navigate("/graficos-novo")} 
+            onClick={() => navigate("/graficos-haccp")} 
             className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm font-medium transition-colors"
           >
             <BarChart3 size={18} className="text-purple-400"/>
