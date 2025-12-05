@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
-import { ArrowLeft, Filter, ShieldAlert, X, RefreshCw, Check, ChevronDown, BarChart3 } from "lucide-react";
+import { ArrowLeft, Filter, ShieldAlert, X, RefreshCw, Check, ChevronDown, BarChart3, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-// --- COMPONENTE MULTI-SELECT (Reutilizável) ---
+// --- COMPONENTE MULTI-SELECT MELHORADO ---
 function MultiSelect({ label, options, selectedValues = [], onChange, color = "orange" }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
@@ -142,6 +142,23 @@ export default function TelaHACCP() {
     fetchDados({});
   };
 
+  // --- FUNÇÃO DE DOWNLOAD ---
+  const handleDownloadExcel = async () => {
+    try {
+      const response = await api.get("/download/haccp", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "Planilha_HACCP_Original.xlsx");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error("Erro ao baixar", error);
+      alert("Erro ao baixar planilha. Verifique se existe no servidor.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-8">
       
@@ -161,7 +178,15 @@ export default function TelaHACCP() {
         </div>
         
         <div className="flex items-center gap-3">
-          {/* BOTÃO PARA VER GRÁFICOS (ATUALIZADO) */}
+          {/* BOTÃO DOWNLOAD */}
+          <button 
+            onClick={handleDownloadExcel} 
+            className="p-2 bg-green-600 hover:bg-green-500 rounded-lg transition text-white shadow-lg shadow-green-900/20"
+            title="Baixar Planilha Original"
+          >
+            <Download size={18} />
+          </button>
+
           <button 
             onClick={() => navigate("/graficos-haccp")} 
             className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm font-medium transition-colors"

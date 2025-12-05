@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
-import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown, BarChart3, Settings2, GripVertical, Search, Siren } from "lucide-react";
+import { ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown, BarChart3, Settings2, GripVertical, Search, Siren, Download } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 // --- COMPONENTE MULTI-SELECT MELHORADO ---
@@ -245,6 +245,26 @@ export default function TelaGeral() {
     fetchDados({});
   };
 
+  // --- NOVA FUNÇÃO DE DOWNLOAD ---
+  const handleDownloadExcel = async () => {
+    try {
+      // Importante: responseType: 'blob' para lidar com arquivos binários
+      const response = await api.get("/download/geral", { responseType: "blob" });
+      
+      // Cria um link temporário para forçar o download no navegador
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "Planilha_Potabilidade_Original.xlsx");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error("Erro ao baixar arquivo", error);
+      alert("Erro ao baixar a planilha. Verifique se ela existe no servidor.");
+    }
+  };
+
   const onDragStart = (e, colNome) => {
     setColunaArrastada(colNome);
     e.dataTransfer.effectAllowed = "move";
@@ -283,6 +303,15 @@ export default function TelaGeral() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {/* BOTÃO DE DOWNLOAD AQUI */}
+            <button 
+              onClick={handleDownloadExcel} 
+              className="p-2 bg-green-600 hover:bg-green-500 rounded-lg transition text-white shadow-lg shadow-green-900/20"
+              title="Baixar Planilha Original"
+            >
+              <Download size={18} />
+            </button>
+
             <button onClick={() => navigate("/graficos-novo")} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm font-medium transition-colors"><BarChart3 size={18} className="text-purple-400"/>Gráficos</button>
             <button onClick={() => fetchDados(filtrosAtivos)} className="p-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition text-white shadow-lg shadow-blue-900/20"><RefreshCw size={18} /></button>
           </div>

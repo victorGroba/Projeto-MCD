@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/api";
-import { ArrowLeft, Filter, TestTube, X, RefreshCw, Check, ChevronDown, BarChart3 } from "lucide-react";
+import { ArrowLeft, Filter, TestTube, X, RefreshCw, Check, ChevronDown, BarChart3, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-// --- COMPONENTE MULTI-SELECT PERSONALIZADO ---
+// --- COMPONENTE MULTI-SELECT ---
 function MultiSelect({ label, options, selectedValues = [], onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
@@ -52,7 +52,6 @@ function MultiSelect({ label, options, selectedValues = [], onChange }) {
         <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
-      {/* Dropdown Menu */}
       {isOpen && (
         <div className="absolute top-full left-0 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto p-1">
           {options.map((opt) => {
@@ -143,6 +142,23 @@ export default function TelaVisa() {
     fetchDados({});
   };
 
+  // --- NOVA FUNÇÃO DE DOWNLOAD ---
+  const handleDownloadExcel = async () => {
+    try {
+      const response = await api.get("/download/visa", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "Planilha_VISA_Original.xlsx");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error("Erro ao baixar", error);
+      alert("Erro ao baixar planilha. Verifique se existe no servidor.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 md:p-8">
       
@@ -161,7 +177,15 @@ export default function TelaVisa() {
         </div>
         
         <div className="flex items-center gap-3">
-          {/* BOTÃO PARA VER GRÁFICOS */}
+          {/* NOVO BOTÃO DE DOWNLOAD */}
+          <button 
+            onClick={handleDownloadExcel} 
+            className="p-2 bg-green-600 hover:bg-green-500 rounded-lg transition text-white shadow-lg shadow-green-900/20"
+            title="Baixar Planilha Original"
+          >
+            <Download size={18} />
+          </button>
+
           <button 
             onClick={() => navigate("/graficos-novo")} 
             className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-sm font-medium transition-colors"
