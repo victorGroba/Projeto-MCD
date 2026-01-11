@@ -9,6 +9,7 @@ from mcdagua.routes.graficos import graficos_bp
 from mcdagua.routes.auth_routes import auth_bp
 from mcdagua.tasks.refresh import scheduled_refresh
 
+
 def create_app():
     app = Flask(__name__)
     app.secret_key = "super-secure-key"

@@ -62,7 +62,6 @@ def load_geral_dataframe():
 def load_visa_dataframe():
     """
     Carrega a planilha da VISA.
-    Lê a configuração 'PATH_VISA' do .env.
     Aba esperada: 'Consolidado Coletas'
     """
     path = current_app.config.get("PATH_VISA")
@@ -107,8 +106,7 @@ def load_visa_dataframe():
 def load_haccp_dataframe():
     """
     Carrega a planilha de HACCP (Tabela de Dados).
-    Lê a configuração 'PATH_HACCP' do .env.
-    Aba esperada: 'GERAL' (conforme seu arquivo 'Planilha Controle - HACCP.xlsx')
+    Aba esperada: 'GERAL' ou 'HACCP'
     """
     path = current_app.config.get("PATH_HACCP")
 
@@ -117,9 +115,7 @@ def load_haccp_dataframe():
         return pd.DataFrame()
 
     try:
-        # Tenta ler a aba "GERAL" com header na linha 2 (índice 1)
         df = pd.read_excel(path, sheet_name="GERAL", header=1)
-        
     except ValueError:
         try:
             print("⚠️ [HACCP] Aba 'GERAL' não encontrada, tentando 'HACCP'...")
@@ -127,7 +123,6 @@ def load_haccp_dataframe():
         except Exception as e:
             print(f"❌ [HACCP] Erro crítico: Nem aba 'GERAL' nem 'HACCP' encontradas: {e}")
             return pd.DataFrame()
-            
     except Exception as e:
         print(f"❌ [HACCP] Erro ao ler arquivo: {e}")
         return pd.DataFrame()
@@ -146,150 +141,130 @@ def load_haccp_dataframe():
 
 
 # ==============================================================================
-# 4. CLASSE DE GRÁFICOS (LEGADO / GERAL)
+# 4. CLASSE DE GRÁFICOS (POTABILIDADE - ABA 'GRÁFICO PENDENCIA')
 # ==============================================================================
 class GraficoPendenciaLoader:
     def __init__(self):
-        # Assume-se que os gráficos gerais vêm da planilha de Potabilidade (Geral)
         self.path = current_app.config.get("PATH_GERAL")
         try:
+            # Carrega a aba sem cabeçalho para usar índices numéricos absolutos (A=0, K=10)
             self.df = pd.read_excel(self.path, sheet_name="GRÁFICO PENDENCIA", header=None)
         except Exception as e:
-            print(f"❌ [GRÁFICOS] Erro ao abrir aba 'GRÁFICO PENDENCIA' do arquivo Geral: {e}")
+            print(f"❌ [GRÁFICOS] Erro ao abrir aba 'GRÁFICO PENDENCIA': {e}")
             self.df = pd.DataFrame()
 
-    def _ler_bloco_dinamico(self, linha_inicio, col_inicio, num_cols):
+    def _ler_bloco(self, row_idx, col_idx, num_val_cols):
+        """
+        Lê um bloco de dados a partir de uma coordenada (Linha, Coluna).
+        Para de ler quando encontra uma linha vazia no rótulo.
+        """
         dados = []
-        linha = linha_inicio
+        linha = row_idx
         
-        if self.df.empty or linha >= len(self.df):
-            return dados
-        
+        # Proteção contra DataFrame vazio ou índices fora do limite
+        if self.df.empty or linha >= len(self.df): 
+            return pd.DataFrame()
+
         while linha < len(self.df):
-            rotulo = self.df.iloc[linha, col_inicio]
+            # 1. Pega o Rótulo (ex: Coluna K = Index 10)
+            try:
+                rotulo = self.df.iloc[linha, col_idx]
+            except IndexError:
+                break
+            
+            # Se rótulo for vazio/NaN, assume fim da tabela
             if pd.isna(rotulo) or str(rotulo).strip() == "":
                 break
             
-            valores = list(self.df.iloc[linha, col_inicio+1 : col_inicio+1+num_cols])
+            # 2. Pega os Valores (Colunas à direita do rótulo)
+            # col_fim é exclusivo no slice do Python
+            col_fim = col_idx + 1 + num_val_cols
+            
+            # Garante que não estoure o total de colunas do Excel
+            if col_fim > self.df.shape[1]:
+                col_fim = self.df.shape[1]
+                
+            valores = list(self.df.iloc[linha, col_idx+1 : col_fim])
+            
+            # Preenche com 0 se faltar algum dado na direita (celula vazia no final da linha)
+            while len(valores) < num_val_cols:
+                valores.append(0)
+                
             dados.append([rotulo] + valores)
             linha += 1
             
-        return dados
+        # Gera nomes de colunas provisórios
+        cols = ["rotulo"] + [f"val_{i}" for i in range(num_val_cols)]
+        return pd.DataFrame(dados, columns=cols)
 
-    def load_pendencia_anual(self):
+    def _processar_para_grafico(self, df):
+        """
+        Ajusta o DataFrame cru para o formato JSON.
+        Promove a primeira linha (cabeçalho da tabela no Excel) para nome das colunas.
+        """
+        if df.empty: return pd.DataFrame()
+        
         try:
-            if self.df.empty: return pd.DataFrame()
-            anos = list(self.df.iloc[2, 8:11]) 
-            cols = ["mes"] + [str(a) for a in anos]
-            dados = self._ler_bloco_dinamico(3, 7, 3)
-            return pd.DataFrame(dados, columns=cols)
-        except:
-            return pd.DataFrame()
-
-    def load_pendencia_regional(self):
-        try:
-            if self.df.empty: return pd.DataFrame()
-            ROW_HEADER = 20
-            ROW_DATA   = 21
-            COL_NAMES  = 6
-            COL_START  = 7
-
-            regionais = []
-            c = COL_START
-            while c < len(self.df.columns):
-                val = self.df.iloc[ROW_HEADER, c]
-                if pd.isna(val) or str(val).strip() == "":
-                    break
-                regionais.append(val)
-                c += 1
+            # A linha 0 do DataFrame contem os cabeçalhos (ex: "OK", "NOK") lidos do Excel
+            df = df.set_index("rotulo") 
             
-            dados = self._ler_bloco_dinamico(ROW_DATA, COL_NAMES, len(regionais))
-            df = pd.DataFrame(dados, columns=["mes"] + [str(r) for r in regionais])
-
-            if not df.empty:
-                df = df.set_index("mes").transpose().reset_index()
-                df.rename(columns={"index": "regional"}, inplace=True) 
+            new_header = df.iloc[0] # Pega a primeira linha de dados como Header
+            df = df[1:]             # Remove essa linha dos dados
+            df.columns = new_header # Aplica o Header nas colunas
+            
+            # Reseta o índice para que a coluna de rótulos (ex: Regional) volte a ser coluna normal
+            df = df.reset_index()
+            
+            # Limpeza do nome do índice se ficar sujo
+            df.columns.name = None
             
             return df
-        except:
-            return pd.DataFrame()
-
-    def load_backroom(self):
-        try:
-            if self.df.empty: return pd.DataFrame()
-            ROW_HEADER = 35
-            ROW_DATA   = 36
-            COL_NAMES  = 6
-            COL_START  = 7
-            
-            categorias = []
-            c = COL_START
-            while c < len(self.df.columns):
-                val = self.df.iloc[ROW_HEADER, c]
-                if pd.isna(val) or str(val).strip() == "":
-                    break
-                categorias.append(val)
-                c += 1
-            
-            dados = self._ler_bloco_dinamico(ROW_DATA, COL_NAMES, len(categorias))
-            df = pd.DataFrame(dados, columns=["regional"] + [str(cat) for cat in categorias])
-
-            if not df.empty:
-                df = df.set_index("regional").transpose().reset_index()
-                df.rename(columns={"index": "status"}, inplace=True)
-
-            return df
-        except:
-            return pd.DataFrame()
-
-    def load_gelo(self):
-        try:
-            if self.df.empty: return pd.DataFrame()
-            categorias = []
-            c = 8
-            while c < len(self.df.columns) and pd.notna(self.df.iloc[49, c]):
-                categorias.append(self.df.iloc[49, c])
-                c += 1
-                
-            dados = self._ler_bloco_dinamico(50, 7, len(categorias))
-            df = pd.DataFrame(dados, columns=["regional"] + [str(cat) for cat in categorias])
-
-            if not df.empty:
-                df = df.set_index("regional").transpose().reset_index()
-                df.rename(columns={"index": "status"}, inplace=True)
-
-            return df
-        except:
-            return pd.DataFrame()
-
-    def load_pendencias_gelo(self):
-        try:
-            if self.df.empty: return pd.DataFrame()
-            categorias = []
-            c = 8
-            while c < len(self.df.columns) and pd.notna(self.df.iloc[64, c]):
-                categorias.append(self.df.iloc[64, c])
-                c += 1
-
-            dados = self._ler_bloco_dinamico(65, 7, len(categorias))
-            df = pd.DataFrame(dados, columns=["regional"] + [str(cat) for cat in categorias])
-
-            if not df.empty:
-                df = df.set_index("regional").transpose().reset_index()
-                df.rename(columns={"index": "status"}, inplace=True)
-
-            return df
-        except:
+        except Exception:
             return pd.DataFrame()
 
     def load_all(self):
-        return {
-            "restaurante_anual": self.load_pendencia_anual(),
-            "restaurante_regional": self.load_pendencia_regional(),
-            "backroom": self.load_backroom(),
-            "gelo": self.load_gelo(),
-            "pendencias_gelo": self.load_pendencias_gelo()
-        }
+        """
+        Lê os gráficos usando as coordenadas mapeadas:
+        Coluna K = Index 10
+        """
+        if self.df.empty: return {}
+        
+        # Constante: Coluna K no Excel é índice 10 no Pandas (0-based)
+        COL_K = 10 
+        
+        graficos = {}
+
+        # 1. Restaurante Anual ($K$3:$N$15)
+        # Linha 3 Excel = Index 2
+        # Colunas L, M, N = 3 colunas de valor
+        df_anual = self._ler_bloco(row_idx=2, col_idx=COL_K, num_val_cols=3)
+        graficos["restaurante_anual"] = self._processar_para_grafico(df_anual)
+
+        # 2. Regional ($K$20:$O$32)
+        # Linha 20 Excel = Index 19
+        # Colunas L, M, N, O = 4 colunas de valor
+        df_reg = self._ler_bloco(row_idx=19, col_idx=COL_K, num_val_cols=4)
+        graficos["restaurante_regional"] = self._processar_para_grafico(df_reg)
+
+        # 3. Back Room ($K$38:$O$42)
+        # Linha 38 Excel = Index 37
+        # Colunas L, M, N, O = 4 colunas de valor
+        df_back = self._ler_bloco(row_idx=37, col_idx=COL_K, num_val_cols=4)
+        graficos["backroom"] = self._processar_para_grafico(df_back)
+
+        # 4. Gelo ($K$50:$O$54)
+        # Linha 50 Excel = Index 49
+        # Colunas L, M, N, O = 4 colunas de valor
+        df_gelo = self._ler_bloco(row_idx=49, col_idx=COL_K, num_val_cols=4)
+        graficos["gelo"] = self._processar_para_grafico(df_gelo)
+
+        # 5. Pendência Gelo ($K$65:$N$69)
+        # Linha 65 Excel = Index 64
+        # Colunas L, M, N = 3 colunas de valor
+        df_pend_gelo = self._ler_bloco(row_idx=64, col_idx=COL_K, num_val_cols=3)
+        graficos["pendencias_gelo"] = self._processar_para_grafico(df_pend_gelo)
+
+        return graficos
 
 
 # ==============================================================================
@@ -297,13 +272,11 @@ class GraficoPendenciaLoader:
 # ==============================================================================
 
 def get_dataframe():
-    """Retorna o DataFrame da aba GERAL (usado pelo dashboard legacy)."""
     return load_geral_dataframe()
 
 def refresh_dataframe():
-    """Limpa o cache para forçar recarregamento."""
     cache.clear()
-    print("🧹 [CACHE] Cache limpo. Próxima requisição recarregará os arquivos.")
+    print("🧹 [CACHE] Cache limpo.")
 
 def load_all_graphics():
     """Carrega todos os dados da aba GRÁFICO PENDENCIA da planilha Geral."""
@@ -312,68 +285,55 @@ def load_all_graphics():
 
 
 # ==============================================================================
-# 6. LOADER ESPECÍFICO PARA GRÁFICOS HACCP (CORREÇÃO: 10 COLUNAS A-J)
+# 6. LOADER ESPECÍFICO PARA GRÁFICOS HACCP
 # ==============================================================================
 def load_haccp_graphics_data():
     """
     Carrega dados da aba 'GRÁFICO' do arquivo HACCP.
-    Inclui: Tabelas dinâmicas e tabela fixa de Não Conformidades (A23:J24).
     """
     path = current_app.config.get("PATH_HACCP")
     if not path: return {}
 
     try:
-        # Lê a aba GRÁFICO sem cabeçalho para mapear posições
         df = pd.read_excel(path, sheet_name="GRÁFICO", header=None)
-        
         resultados = {
             "regional": {}, 
             "consultor": {},
             "nao_conformidades": {} 
         }
 
-        # --- 1. Lógica das Tabelas Dinâmicas (Regional e Consultor) ---
+        # --- 1. Lógica das Tabelas Dinâmicas ---
         def extrair_tabela(start_row, start_col):
             dados = {}
             row = start_row + 1 
             while row < len(df):
                 chave = df.iloc[row, start_col]
                 valor = df.iloc[row, start_col + 1]
-                # Para quando acabar os dados ou chegar no Total Geral
                 if pd.isna(chave) or str(chave).strip() == "" or str(chave).lower() == "total geral":
                     break
                 dados[str(chave).strip()] = valor
                 row += 1
             return dados
 
-        # Procura "Rótulos de Linha" nas primeiras 20x20 células
         for r in range(min(20, len(df))):
             for c in range(min(20, len(df.columns))):
                 cell = str(df.iloc[r, c]).strip()
                 if cell == "Rótulos de Linha":
-                    # Se estiver na esquerda (coluna < 5), assume Consultor
                     if c < 5: 
                         resultados["consultor"] = extrair_tabela(r, c)
                     else:
                         resultados["regional"] = extrair_tabela(r, c)
 
-        # --- 2. Lógica da Tabela Fixa A23:J24 (Não Conformidades - 10 colunas) ---
+        # --- 2. Lógica da Tabela Fixa A23:J24 ---
         try:
-            # Verifica se existem linhas suficientes para acessar a linha 24 (índice 23)
             if len(df) >= 24:
-                # Linha 23 (índice 22) = Cabeçalhos
-                # Linha 24 (índice 23) = Valores
-                
-                # Lê das colunas A (0) até J (9) = 10 colunas no total
-                # Slice [22, 0:10]
                 headers = df.iloc[22, 0:10] 
                 values = df.iloc[23, 0:10]  
-                
                 for h, v in zip(headers, values):
                     if pd.notna(h) and str(h).strip() != "":
                         resultados["nao_conformidades"][str(h).strip()] = v
         except Exception as e:
-            print(f"⚠️ [HACCP] Erro ao ler tabela de não conformidades (A23:J24): {e}")
+            print(f"⚠️ [HACCP] Erro ao ler tabela de não conformidades: {e}")
 
         return resultados
 

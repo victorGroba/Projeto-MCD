@@ -4,6 +4,8 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt
 from mcdagua.core.loader import refresh_dataframe
+# Importa o serviço que criamos para processar os dados estatísticos
+from mcdagua.services.excel_processor import processar_aba_geral
 
 upload_bp = Blueprint("upload", __name__)
 
@@ -64,18 +66,39 @@ def upload_file(tipo_arquivo):
         return jsonify({"msg": f"Caminho não configurado para {tipo_arquivo}."}), 500
 
     try:
+        # 1. Preparação e Backup
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         realizar_backup(save_path)
+        
+        # 2. Salvar o arquivo
         file.save(save_path)
+        
+        # 3. Atualizar DataFrames globais
         refresh_dataframe()
-        return jsonify({"msg": f"Upload de {tipo_arquivo} realizado com sucesso!"}), 200
+        
+        # 4. Processamento Específico (Novidade aqui)
+        response_data = {"msg": f"Upload de {tipo_arquivo} realizado com sucesso!"}
+
+        if tipo_arquivo == "geral":
+            print(f"⚙️ [PROCESSAMENTO] Iniciando análise estatística da aba GERAL...")
+            dados_dashboard, erro = processar_aba_geral(save_path)
+            
+            if erro:
+                print(f"⚠️ [PROCESSAMENTO] Aviso: {erro}")
+                # Adiciona aviso na resposta, mas não falha o upload (arquivo já foi salvo)
+                response_data["warning"] = f"Arquivo salvo, mas houve erro ao gerar gráficos: {erro}"
+            else:
+                print("✅ [PROCESSAMENTO] Dados estatísticos gerados com sucesso.")
+                # Anexa os dados processados ao JSON de resposta
+                response_data["dashboard_data"] = dados_dashboard
+
+        return jsonify(response_data), 200
 
     except Exception as e:
         print(f"❌ Erro no upload: {e}")
         return jsonify({"msg": f"Erro interno: {str(e)}"}), 500
 
-# --- ROTA DE DOWNLOAD CORRIGIDA ---
-# Esta rota responde em: http://localhost:8000/download/geral
+# --- ROTA DE DOWNLOAD ---
 @upload_bp.route("/download/<tipo_arquivo>", methods=["GET"])
 @jwt_required()
 def download_file(tipo_arquivo):
