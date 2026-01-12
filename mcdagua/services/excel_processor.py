@@ -1,147 +1,173 @@
 # mcdagua/services/excel_processor.py
 import pandas as pd
+import numpy as np
+
+def processar_detalhes_parametros_por_mes(df):
+    """
+    Gera dados para gráficos individuais de cada parâmetro x Mês.
+    Estrutura:
+    {
+        "Back Room": [
+             { "titulo": "pH", "labels": ["Dezembro"], "ok": [10], "nok": [1] },
+             { "titulo": "Cloro", ... }
+        ],
+        ...
+    }
+    """
+    # Mapeamento de Colunas (0-based)
+    # A=0, D=3 (Mês), J=9...
+    IDX_MES = 3 
+    
+    regras_grupos = {
+        "Back Room": slice(9, 18),      # J a R
+        "Gelo Pool": slice(19, 22),     # T a V
+        "Mar de Gelo": slice(23, 26),   # X a Z
+        "Bin Café": slice(27, 30),      # AB a AD
+        "Bin Bebidas": slice(31, 34)    # AF a AH
+    }
+
+    # Ordem cronológica para garantir que os gráficos fiquem ordenados
+    ORDEM_MESES = [
+        "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+    ]
+
+    resultado_grupos = {}
+
+    try:
+        # Garante que a coluna Mês existe e normaliza
+        if df.shape[1] <= IDX_MES:
+            return {}
+        
+        col_mes = df.iloc[:, IDX_MES].astype(str).str.strip()
+        
+        for nome_grupo, fatiador in regras_grupos.items():
+            df_grupo = df.iloc[:, fatiador].copy()
+            lista_graficos = []
+
+            for col in df_grupo.columns:
+                param_nome = str(col).strip()
+                
+                # Cria um DataFrame temporário com Mês e o Valor do Parâmetro
+                df_temp = pd.DataFrame({
+                    'Mes': col_mes,
+                    'Valor': df_grupo[col].astype(str).str.lower().str.strip()
+                })
+
+                # Filtra apenas OK e NOK (Ignora NA, Vazio, etc)
+                df_temp = df_temp[df_temp['Valor'].isin(['ok', 'nok'])]
+
+                if df_temp.empty:
+                    # Se não tiver dados, cria estrutura vazia mas preserva o gráfico
+                    lista_graficos.append({
+                        "titulo": param_nome,
+                        "labels": [],
+                        "ok": [],
+                        "nok": []
+                    })
+                    continue
+
+                # Agrupa por Mês e Valor
+                agrupado = df_temp.groupby(['Mes', 'Valor']).size().unstack(fill_value=0)
+                
+                # Garante que as colunas ok/nok existam
+                if 'ok' not in agrupado.columns: agrupado['ok'] = 0
+                if 'nok' not in agrupado.columns: agrupado['nok'] = 0
+
+                # Ordena os meses
+                # Pega os meses presentes no dados
+                meses_presentes = agrupado.index.tolist()
+                # Ordena baseada na lista fixa
+                meses_ordenados = sorted(
+                    meses_presentes, 
+                    key=lambda x: ORDEM_MESES.index(x.lower()) if x.lower() in ORDEM_MESES else 999
+                )
+                
+                # Reindexa o dataframe pela ordem correta
+                agrupado = agrupado.reindex(meses_ordenados)
+
+                # Monta o objeto final
+                lista_graficos.append({
+                    "titulo": param_nome,
+                    "labels": agrupado.index.tolist(), # Lista de Meses
+                    "ok": agrupado['ok'].tolist(),
+                    "nok": agrupado['nok'].tolist()
+                })
+
+            resultado_grupos[nome_grupo] = lista_graficos
+
+        return resultado_grupos
+
+    except Exception as e:
+        print(f"Erro ao processar detalhes: {e}")
+        return {}
 
 def processar_aba_geral(caminho_arquivo):
     """
-    Lê a aba GERAL, normaliza as colunas (J, T, X...) e retorna 
-    os dados estatísticos para o Dashboard.
+    Processador Principal da Aba GERAL.
+    Retorna os KPIs antigos E os novos gráficos detalhados.
     """
     try:
-        # Lê sem cabeçalho para manipular índices
+        # Lê cabeçalho real (Linha 2 do Excel = Index 1 do Pandas) para pegar nomes dos parâmetros
+        # Header=1 pois linha 0 é metadado
+        try:
+            df_header = pd.read_excel(caminho_arquivo, sheet_name='GERAL', header=1)
+        except:
+            # Fallback para CSV
+            df_header = pd.read_csv(caminho_arquivo, header=1)
+            
+        # 1. PROCESSA OS DETALHES (Novo requisito)
+        detalhes_parametros = processar_detalhes_parametros_por_mes(df_header)
+
+
+        # 2. PROCESSA OS TOTAIS GERAIS (Lógica legada mantida para não quebrar outros kpis)
+        # Lê sem header para pegar slices fixos
         df_raw = pd.read_excel(caminho_arquivo, sheet_name='GERAL', header=None)
-        
-        # Assume linha 1 como cabeçalho de metadados, dados começam na linha 2
         df_dados = df_raw.iloc[1:].copy()
-
+        
         lista_dados_limpos = []
-
-        # Configuração baseada na sua estrutura (A=0 ... J=9)
-        idx_meta = [0, 1, 2] # Regional(0), Sigla(1), Loja(2) - Ajuste se precisar de mais
+        idx_meta = [0, 1, 2] 
         nomes_meta = ['Regional', 'Sigla', 'Loja']
-
-        # Configuração dos blocos
         config_itens = [
-            {"nome": "Back Room",   "col_inicio": 9},  # J
-            {"nome": "Gelo Pool",   "col_inicio": 19}, # T
-            {"nome": "Mar de Gelo", "col_inicio": 23}, # X
-            {"nome": "Bin Café",    "col_inicio": 27}, # AB
-            {"nome": "Bin Bebidas", "col_inicio": 31}, # AF
+            {"nome": "Back Room",   "col_inicio": 9},
+            {"nome": "Gelo Pool",   "col_inicio": 19},
+            {"nome": "Mar de Gelo", "col_inicio": 23},
+            {"nome": "Bin Café",    "col_inicio": 27},
+            {"nome": "Bin Bebidas", "col_inicio": 31},
         ]
 
         for item in config_itens:
-            # Pega metadados
             df_temp = df_dados.iloc[:, idx_meta].copy()
             df_temp.columns = nomes_meta
-            
-            # Pega Status (assumindo que é a 1ª coluna do bloco)
             idx_status = item["col_inicio"]
-            
             df_temp['Item_Avaliado'] = item["nome"]
             df_temp['Status'] = df_dados.iloc[:, idx_status]
-
-            # Limpeza
             df_temp = df_temp.dropna(subset=['Status'])
-            # Filtra apenas OK e NOK para garantir
-            df_temp = df_temp[df_temp['Status'].isin(['OK', 'NOK'])]
-            
+            # Normalização simples para o KPI geral
+            df_temp = df_temp[df_temp['Status'].astype(str).str.upper().isin(['OK', 'NOK'])]
             lista_dados_limpos.append(df_temp)
 
-        if not lista_dados_limpos:
-            return None, "Nenhum dado encontrado nos blocos especificados."
+        dados_dashboard = {}
+        if lista_dados_limpos:
+            df_final = pd.concat(lista_dados_limpos, ignore_index=True)
+            df_final['Status'] = df_final['Status'].astype(str).str.upper().str.strip()
 
-        df_final = pd.concat(lista_dados_limpos, ignore_index=True)
-
-        # --- GERAÇÃO DOS DADOS PARA O GRÁFICO ---
+            dados_dashboard = {
+                "total_geral": df_final['Status'].value_counts().to_dict(),
+                "por_regional": pd.crosstab(df_final['Regional'], df_final['Status']).reset_index().to_dict(orient='records'),
+                "top_falhas": df_final[df_final['Status'] == 'NOK']['Item_Avaliado'].value_counts().head(5).to_dict()
+            }
         
-        # 1. Totais Gerais
-        total_status = df_final['Status'].value_counts().to_dict()
-
-        # 2. Por Regional (Para gráfico empilhado)
-        por_regional = pd.crosstab(df_final['Regional'], df_final['Status']).reset_index().to_dict(orient='records')
-
-        # 3. Top Falhas
-        top_falhas = df_final[df_final['Status'] == 'NOK']['Item_Avaliado'].value_counts().head(5).to_dict()
-
-        dados_dashboard = {
-            "total_geral": total_status,
-            "por_regional": por_regional,
-            "top_falhas": top_falhas
-        }
+        # INSERE OS NOVOS DADOS NA RESPOSTA
+        dados_dashboard["detalhes_parametros"] = detalhes_parametros
 
         return dados_dashboard, None
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return None, str(e)
-    
-    # Adicione isso no final do arquivo mcdagua/services/excel_processor.py
 
+# Função dummy para compatibilidade se for importada em outro lugar
 def formatar_para_chartjs(df):
-    """
-    Transforma o DataFrame 'Tidy' (formato longo) na estrutura que o 
-    TelaGraficos.jsx espera (Eixos X e Datasets Y).
-    """
-    resultado = {}
-
-    # --- 1. BACK ROOM (Agrupado por Regional) ---
-    df_backroom = df[df['Item_Avaliado'] == 'Back Room']
-    if not df_backroom.empty:
-        # Cria tabela cruzada: Linhas=Regional, Colunas=Status
-        crosstab = pd.crosstab(df_backroom['Regional'], df_backroom['Status'])
-        
-        resultado['backroom'] = {
-            "regionais": crosstab.index.tolist(),
-            "valores": {
-                col: crosstab[col].tolist() for col in crosstab.columns
-            }
-        }
-    else:
-        resultado['backroom'] = {"regionais": [], "valores": {}}
-
-    # --- 2. GELO (Agrupando 'Gelo Pool' e 'Mar de Gelo') ---
-    df_gelo = df[df['Item_Avaliado'].isin(['Gelo Pool', 'Mar de Gelo'])]
-    if not df_gelo.empty:
-        crosstab = pd.crosstab(df_gelo['Regional'], df_gelo['Status'])
-        resultado['gelo'] = {
-            "regionais": crosstab.index.tolist(),
-            "valores": {
-                col: crosstab[col].tolist() for col in crosstab.columns
-            }
-        }
-    else:
-        resultado['gelo'] = {"regionais": [], "valores": {}}
-
-    # --- 3. RESTAURANTE REGIONAL (Visão Geral de Tudo) ---
-    # Conta tudo (Back Room + Gelo + Bins...) por regional
-    crosstab_total = pd.crosstab(df['Regional'], df['Status'])
-    resultado['restaurante_regional'] = {
-        "regionais": crosstab_total.index.tolist(),
-        "valores": {
-            col: crosstab_total[col].tolist() for col in crosstab_total.columns
-        }
-    }
-
-    # --- 4. PENDÊNCIAS DE GELO (Apenas NOKs por Loja ou Sigla - Top 10) ---
-    # Filtrando apenas NOK de itens de Gelo
-    df_gelo_nok = df[(df['Item_Avaliado'].isin(['Gelo Pool', 'Mar de Gelo'])) & (df['Status'] == 'NOK')]
-    
-    if not df_gelo_nok.empty:
-        # Vamos agrupar por Loja para ver quem tem mais problemas
-        contagem_lojas = df_gelo_nok['Loja'].value_counts().head(10) # Top 10 lojas com problema
-        
-        resultado['pendencias_gelo'] = {
-            "regionais": contagem_lojas.index.tolist(), # Usando 'regionais' como label genérico pro eixo X
-            "valores": {
-                "NOK": contagem_lojas.tolist()
-            }
-        }
-    else:
-        resultado['pendencias_gelo'] = {"regionais": [], "valores": {}}
-        
-    # --- 5. Dummy para 'restaurante_anual' (pois sua planilha não tem Data explícita na config atual) ---
-    # Se tiver coluna de data, podemos ajustar. Por enquanto envio vazio para não quebrar.
-    resultado['restaurante_anual'] = {
-        "meses": ["Jan", "Fev", "Mar"], 
-        "valores": {"OK": [0,0,0], "NOK": [0,0,0]}
-    }
-
-    return resultado
+    return {}
