@@ -77,12 +77,11 @@ def get_programado_realizado(df):
         
         realizado_series = df_2026.groupby(df_2026[col_data].dt.month).size()
         
-        programado_meta = {1: 100, 2: 120, 3: 110, 4: 130, 5: 140, 6: 150, 
-                          7: 150, 8: 150, 9: 150, 10: 150, 11: 150, 12: 150}
+        programado_meta = {1: 193, 2: 103, 3: 76, 4: 211, 5: 186, 6: 221}
         
-        labels_meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
-        realizado_values = [int(realizado_series.get(m, 0)) for m in range(1, 13)]
-        programado_values = [programado_meta.get(m, 0) for m in range(1, 13)]
+        labels_meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun"]
+        realizado_values = [int(realizado_series.get(m, 0)) for m in range(1, 7)]
+        programado_values = [programado_meta.get(m, 0) for m in range(1, 7)]
         
         return {
             "labels": labels_meses,
