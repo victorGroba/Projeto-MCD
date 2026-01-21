@@ -46,46 +46,41 @@ def api_geral():
 # -----------------------------
 # 4. API DE OPÇÕES PARA FILTROS GERAIS (/api/filtros-opcoes)
 # -----------------------------
+# mcdagua/routes/api.py
+
 @api_bp.route("/filtros-opcoes")
 @cache.cached(timeout=300)
 def api_filtros_opcoes():
-    """Retorna listas de valores únicos para preencher os Dropdowns da tela Geral (Legacy)"""
+    """Retorna listas de valores únicos para TODAS as colunas do DataFrame"""
     try:
         df = load_geral_dataframe()
         
-        # Mapeamento para a tela Geral (Legacy)
-        mapa_colunas = {
-            "regional": ["regional", "reg"],
-            "estado": ["estado", "uf", "est"],
-            "sigla_loja": ["sigla_loja", "sigla", "loja", "codigo"],
-            "mes": ["mes", "month"],
-            "consultor": ["consultor", "cons"],
-            "gm": ["gm", "gerente", "gerente_de_mercado"],
-            "tipo_restaurante": ["tipo_restaurante", "tipo_rest", "tipo"],
-            "pendencia": ["pendencia", "status_pendencia"],
-            "reincidencia": ["reincidencia", "reincidente"]
-        }
-        
         opcoes = {}
-        for chave_filtro, possiveis_nomes in mapa_colunas.items():
-            coluna_encontrada = None
-            for nome in possiveis_nomes:
-                if nome in df.columns:
-                    coluna_encontrada = nome
-                    break
-            
-            if coluna_encontrada:
-                unicos = sorted(list(set(df[coluna_encontrada].astype(str).dropna().unique())))
-                opcoes[chave_filtro] = [x for x in unicos if x.strip() != ""]
-                opcoes[f"{chave_filtro}_col_name"] = coluna_encontrada
-            else:
-                opcoes[chave_filtro] = []
+        # Limite de segurança: se uma coluna tiver mais que 500 valores únicos, 
+        # talvez não seja útil como filtro de checkbox (ex: ID, observação livre)
+        LIMITE_UNICOS = 1000 
 
-        return jsonify(opcoes)
+        for col in df.columns:
+            # Pega valores únicos, converte para string, remove nulos e vazios
+            unicos = df[col].dropna().astype(str).unique()
+            unicos = [x for x in unicos if x.strip() != ""]
+            
+            if len(unicos) <= LIMITE_UNICOS:
+                opcoes[col] = sorted(unicos)
+            else:
+                # Se tiver muitos valores, não mandamos a lista (o front deve usar busca texto livre)
+                opcoes[col] = []
+
+        # Retornamos também o mapa de nomes para compatibilidade, 
+        # mas agora a chave é o próprio nome da coluna
+        final_response = opcoes.copy()
+        for col in df.columns:
+            final_response[f"{col}_col_name"] = col
+
+        return jsonify(final_response)
 
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
-
 # -----------------------------
 # 5. API VISA (/api/visa) - COM FILTROS DINÂMICOS
 # -----------------------------
