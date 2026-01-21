@@ -4,7 +4,7 @@ import {
   ArrowLeft, Filter, Table, X, RefreshCw, Check, ChevronDown, 
   BarChart3, Settings2, GripVertical, Search, Siren, Download, 
   ZoomIn, ZoomOut, Maximize2, Minimize2, Eye, EyeOff, Layers,
-  ArrowUpAZ, ArrowDownZA, Hash // Usando icone Hash (simples e seguro)
+  ArrowUpAZ, ArrowDownZA, Hash 
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -29,12 +29,23 @@ const CONFIG_GRUPOS = {
   "Controle Interno": ["status", "pendencia", "analise", "conclusao"]
 };
 
-// --- COMPONENTE DE FILTRO ESTILO EXCEL ---
+// --- COMPONENTE DE FILTRO ESTILO EXCEL (COM SELEÇÃO EM LOTE) ---
 const ExcelColumnFilter = ({ column, options, activeFilters, onFilterChange, align = "left" }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  // Estado local para armazenar as seleções antes de clicar em OK
+  const [pendingFilters, setPendingFilters] = useState([]);
   const menuRef = useRef(null);
 
+  // Sincroniza o estado local com os filtros ativos ao abrir o menu
+  useEffect(() => {
+    if (isOpen) {
+      setPendingFilters(activeFilters || []);
+      setSearchTerm(""); // Limpa busca ao abrir
+    }
+  }, [isOpen, activeFilters]);
+
+  // Fecha ao clicar fora (sem aplicar)
   useEffect(() => {
     function handleClickOutside(event) {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
@@ -45,35 +56,50 @@ const ExcelColumnFilter = ({ column, options, activeFilters, onFilterChange, ali
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedValues = activeFilters || [];
   const hasOptions = options && options.length > 0;
   
   const filteredOptions = hasOptions 
     ? options.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase()))
     : [];
 
+  // Alterna opção no estado LOCAL (sem aplicar na tabela ainda)
   const toggleOption = (val) => {
-    const current = [...selectedValues];
-    if (current.includes(val)) {
-      onFilterChange(column, current.filter(c => c !== val));
-    } else {
-      onFilterChange(column, [...current, val]);
-    }
+    setPendingFilters(prev => {
+      if (prev.includes(val)) {
+        return prev.filter(item => item !== val);
+      } else {
+        return [...prev, val];
+      }
+    });
   };
 
+  // Selecionar/Deselecionar tudo no estado LOCAL
   const handleSelectAll = () => {
-    const allVisibleSelected = filteredOptions.every(opt => selectedValues.includes(opt));
+    const allVisibleSelected = filteredOptions.every(opt => pendingFilters.includes(opt));
+    
     if (allVisibleSelected) {
-      const newSelected = selectedValues.filter(v => !filteredOptions.includes(v));
-      onFilterChange(column, newSelected);
+      // Desmarca os visíveis
+      setPendingFilters(prev => prev.filter(item => !filteredOptions.includes(item)));
     } else {
-      const newSelected = [...new Set([...selectedValues, ...filteredOptions])];
-      onFilterChange(column, newSelected);
+      // Marca os visíveis (mantendo os que já estavam marcados mas não visíveis na busca)
+      setPendingFilters(prev => [...new Set([...prev, ...filteredOptions])]);
     }
   };
 
-  const isActive = selectedValues.length > 0;
-  
+  // Aplica as mudanças
+  const applyFilters = () => {
+    onFilterChange(column, pendingFilters);
+    setIsOpen(false);
+  };
+
+  // Limpa apenas o estado local (usuário ainda precisa dar OK se quiser confirmar a limpeza)
+  // Ou podemos aplicar direto. Geralmente "Limpar Filtro" é uma ação de reset rápido.
+  // Vamos fazer limpar o estado local para manter a consistência de "só aplica no OK".
+  const clearLocalFilters = () => {
+    setPendingFilters([]);
+  };
+
+  const isActive = (activeFilters || []).length > 0;
   const alignClass = align === "left" ? "left-0 origin-top-left" : "right-0 origin-top-right";
 
   return (
@@ -89,6 +115,7 @@ const ExcelColumnFilter = ({ column, options, activeFilters, onFilterChange, ali
       {isOpen && (
         <div className={`absolute top-full mt-1 w-64 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-50 flex flex-col text-left font-normal normal-case animate-in fade-in zoom-in-95 duration-100 ${alignClass}`}>
           
+          {/* Ordenação Visual */}
           <div className="p-2 border-b border-slate-800 flex flex-col gap-1">
             <button className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded text-left disabled:opacity-50">
               <ArrowUpAZ size={14} className="text-slate-500"/> Classificar A a Z
@@ -98,6 +125,7 @@ const ExcelColumnFilter = ({ column, options, activeFilters, onFilterChange, ali
             </button>
           </div>
 
+          {/* Busca Interna */}
           {hasOptions && (
             <div className="p-2 border-b border-slate-800 bg-slate-950">
               <div className="relative">
@@ -114,6 +142,7 @@ const ExcelColumnFilter = ({ column, options, activeFilters, onFilterChange, ali
             </div>
           )}
 
+          {/* Lista de Opções */}
           <div className="max-h-60 overflow-y-auto p-1 custom-scrollbar">
              {hasOptions ? (
                <>
@@ -121,14 +150,14 @@ const ExcelColumnFilter = ({ column, options, activeFilters, onFilterChange, ali
                     onClick={handleSelectAll}
                     className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 cursor-pointer rounded mb-1 border-b border-slate-800/50"
                  >
-                    <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${filteredOptions.every(o => selectedValues.includes(o)) && filteredOptions.length > 0 ? 'bg-blue-600 border-blue-600' : 'border-slate-600'}`}>
-                      {filteredOptions.every(o => selectedValues.includes(o)) && filteredOptions.length > 0 && <Check size={10} className="text-white"/>}
+                    <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${filteredOptions.every(o => pendingFilters.includes(o)) && filteredOptions.length > 0 ? 'bg-blue-600 border-blue-600' : 'border-slate-600'}`}>
+                      {filteredOptions.every(o => pendingFilters.includes(o)) && filteredOptions.length > 0 && <Check size={10} className="text-white"/>}
                     </div>
                     <span className="text-xs text-slate-300 font-bold">(Selecionar Tudo)</span>
                  </div>
 
                  {filteredOptions.map(opt => {
-                   const isChecked = selectedValues.includes(opt);
+                   const isChecked = pendingFilters.includes(opt);
                    return (
                      <div key={opt} onClick={() => toggleOption(opt)} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-800 cursor-pointer rounded">
                        <div className={`w-3.5 h-3.5 border rounded flex items-center justify-center ${isChecked ? 'bg-blue-600 border-blue-600' : 'border-slate-600'}`}>
@@ -149,15 +178,16 @@ const ExcelColumnFilter = ({ column, options, activeFilters, onFilterChange, ali
              )}
           </div>
 
+          {/* Rodapé - AGORA COM AÇÃO DE APLICAR */}
           <div className="p-2 border-t border-slate-800 flex justify-between gap-2 bg-slate-950 rounded-b-lg">
             <button 
-              onClick={() => { onFilterChange(column, []); setIsOpen(false); }}
+              onClick={clearLocalFilters}
               className="px-3 py-1 text-[10px] text-slate-400 hover:text-red-400 border border-slate-700 rounded hover:border-red-400/50 hover:bg-red-400/10 transition-colors"
             >
-              Limpar Filtro
+              Limpar Seleção
             </button>
              <button 
-              onClick={() => setIsOpen(false)}
+              onClick={applyFilters}
               className="px-3 py-1 text-[10px] bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors font-medium"
             >
               OK
@@ -401,7 +431,7 @@ export default function TelaGeral() {
                 </h1>
                 <p className="text-slate-400 text-sm flex items-center gap-2">
                    Visão Geral
-                   {/* CONTADOR NO TÍTULO (BACKUP) */}
+                   {/* CONTADOR NO TÍTULO */}
                    <span className="inline-block w-1 h-1 bg-slate-500 rounded-full"></span>
                    <span className="text-blue-400 font-medium">{loading ? "..." : dados.length} registros</span>
                 </p>
