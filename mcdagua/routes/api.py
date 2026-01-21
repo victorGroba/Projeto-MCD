@@ -12,6 +12,7 @@ from mcdagua.core.loader import (
     load_haccp_dataframe
 )
 from mcdagua.services.filters import apply_filters
+from mcdagua.services.kpis import get_programado_realizado
 
 api_bp = Blueprint("api", __name__)
 
@@ -201,3 +202,12 @@ def api_status_arquivos():
         status[key] = info
 
     return jsonify(status)
+
+@api_bp.route("/kpi/programado-realizado")
+def api_kpi_prog_real():
+    try:
+        df = load_geral_dataframe() # Carrega a planilha principal
+        dados = get_programado_realizado(df)
+        return jsonify(dados)
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500

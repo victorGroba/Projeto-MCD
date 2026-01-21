@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 
 export default function AdminUsers() {
   const navigate = useNavigate();
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState([]); // Inicializa sempre como array vazio
   const [newUser, setNewUser] = useState({ username: "", password: "", role: "operacional" });
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -13,9 +13,16 @@ export default function AdminUsers() {
   const fetchUsers = async () => {
     try {
       const res = await api.get("/users");
-      setUsers(res.data);
+      // SEGURANÇA: Só atualiza se a resposta for de facto um Array
+      if (Array.isArray(res.data)) {
+        setUsers(res.data);
+      } else {
+        console.error("Dados recebidos não são uma lista:", res.data);
+        setUsers([]);
+      }
     } catch (err) {
       console.error("Erro ao buscar usuários", err);
+      setUsers([]);
     }
   };
 
@@ -66,7 +73,7 @@ export default function AdminUsers() {
           </div>
         </div>
 
-        {/* Formuário de Criação */}
+        {/* Formulário de Criação */}
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 mb-8 shadow-lg">
           <h2 className="text-lg font-semibold mb-4 text-purple-400">Adicionar Novo Usuário</h2>
           <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
@@ -96,9 +103,9 @@ export default function AdminUsers() {
                 value={newUser.role}
                 onChange={e => setNewUser({...newUser, role: e.target.value})}
               >
-                <option value="operacional">Operacional (Apenas Potabilidade)</option>
-                <option value="gerente_geral">Gerente Geral (Acesso Total)</option>
-                <option value="admin_mattos">Admin LabMattos (Gestão Total)</option>
+                <option value="operacional">Operacional</option>
+                <option value="gerente_geral">Gerente Geral</option>
+                <option value="admin_mattos">Admin LabMattos</option>
               </select>
             </div>
             <button 
@@ -111,7 +118,7 @@ export default function AdminUsers() {
           {msg && <p className="mt-3 text-sm text-green-400">{msg}</p>}
         </div>
 
-        {/* Lista de Usuários */}
+        {/* Lista de Usuários com Trava de Segurança */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="bg-slate-950 text-xs uppercase text-slate-500 font-bold">
@@ -122,35 +129,42 @@ export default function AdminUsers() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {users.map((u) => (
-                <tr key={u.username} className="hover:bg-slate-800/50">
-                  <td className="px-6 py-4 font-medium text-white">{u.username}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded text-xs border ${
-                      u.role === 'admin_mattos' ? 'border-purple-500/30 bg-purple-500/10 text-purple-400' :
-                      u.role === 'gerente_geral' ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' :
-                      'border-slate-500/30 bg-slate-500/10 text-slate-400'
-                    }`}>
-                      {u.role === 'admin_mattos' ? 'Administrador' : u.role === 'gerente_geral' ? 'Gerente' : 'Operacional'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    {u.username !== "labmattos" && (
-                      <button 
-                        onClick={() => handleDelete(u.username)}
-                        className="text-red-400 hover:text-red-300 transition-colors"
-                        title="Excluir usuário"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    )}
+              {/* SEGURANÇA: O 'Array.isArray' impede a quebra do sistema */}
+              {Array.isArray(users) && users.length > 0 ? (
+                users.map((u) => (
+                  <tr key={u.username} className="hover:bg-slate-800/50">
+                    <td className="px-6 py-4 font-medium text-white">{u.username}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded text-xs border ${
+                        u.role === 'admin_mattos' ? 'border-purple-500/30 bg-purple-500/10 text-purple-400' :
+                        u.role === 'gerente_geral' ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' :
+                        'border-slate-500/30 bg-slate-500/10 text-slate-400'
+                      }`}>
+                        {u.role === 'admin_mattos' ? 'Administrador' : u.role === 'gerente_geral' ? 'Gerente' : 'Operacional'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {u.username !== "labmattos" && (
+                        <button 
+                          onClick={() => handleDelete(u.username)}
+                          className="text-red-400 hover:text-red-300 transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="3" className="px-6 py-8 text-center text-slate-500">
+                    Nenhum usuário encontrado ou erro na conexão.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
-
       </div>
     </div>
   );

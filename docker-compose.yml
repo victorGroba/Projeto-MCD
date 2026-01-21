@@ -1,0 +1,37 @@
+
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: mcd_backend
+    restart: unless-stopped
+    volumes:
+      # Persiste a pasta de uploads para que os arquivos não sumam ao reiniciar
+      - mcd_dados_sistema:/app/arquivos_sistema
+    environment:
+      # Defina senhas fortes aqui
+      - JWT_SECRET_KEY=TroqueIssoPorUmaSenhaSuperSeguraNoServidor
+      - APP_USERNAME=admin
+      - APP_PASSWORD=admin
+      # Caminhos internos do container
+      - PATH_GERAL=/app/arquivos_sistema/Planilha_Potabilidade.xlsx
+      - PATH_VISA=/app/arquivos_sistema/Planilha_VISA.xlsx
+      - PATH_HACCP=/app/arquivos_sistema/Planilha_HACCP.xlsx
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: mcd_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      # Mapeia a porta 8085 do VPS para a porta 80 do container frontend
+      # Você usará essa porta 8085 na configuração do Nginx do Qualigestor (VPS)
+      - "8085:80"
+
+volumes:
+  mcd_dados_sistema:

@@ -1,0 +1,15 @@
+# .dockerignore
+node_modules
+dist
+build
+coverage
+.git
+.gitignore
+.env
+__pycache__
+*.pyc
+venv
+.venv
+frontend/node_modules
+frontend/dist
+arquivos_sistema/backups
