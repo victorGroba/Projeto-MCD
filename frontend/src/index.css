@@ -1,1 +1,52 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos Globais - Usando CSS padrão para evitar erros de @apply */
+body {
+  background-color: #0F1535;
+  color: #ffffff;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* CORREÇÃO DEFINITIVA: 
+   Substituímos o @apply problemático por CSS puro.
+   Isso remove a causa do erro "Cannot apply unknown utility class".
+*/
+.card-vision {
+  /* Equivalente a rounded-[20px] */
+  border-radius: 20px;
+  
+  /* Equivalente a backdrop-blur-xl */
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px); /* Para Safari */
+  
+  /* Equivalente a bg-cover bg-no-repeat */
+  background-size: cover;
+  background-repeat: no-repeat;
+
+  /* Estilos manuais de Borda e Sombra */
+  border: 1px solid rgba(255, 255, 255, 0.1); 
+  box-shadow: 0px 20px 27px 0px rgba(0, 0, 0, 0.05);
+  
+  /* Gradiente do Fundo */
+  background-image: linear-gradient(127.09deg, rgba(6, 11, 40, 0.94) 19.41%, rgba(10, 14, 35, 0.49) 76.65%);
+}
+
+/* Estilização da Barra de Rolagem */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0F1535; 
+}
+::-webkit-scrollbar-thumb {
+  background: #1F2749; 
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #0075FF; 
+}
