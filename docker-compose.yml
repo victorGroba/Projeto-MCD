@@ -1,5 +1,3 @@
-
-
 services:
   backend:
     build:
@@ -8,14 +6,18 @@ services:
     container_name: mcd_backend
     restart: unless-stopped
     volumes:
-      # Persiste a pasta de uploads para que os arquivos não sumam ao reiniciar
+      # Persiste a pasta de uploads (arquivos Excel)
       - mcd_dados_sistema:/app/arquivos_sistema
+      
+      # --- LINHA ADICIONADA PARA PERSISTÊNCIA DE USUÁRIOS ---
+      # Mapeia o arquivo da VPS (esquerda) para o container (direita)
+      - ./users.json:/app/users.json 
+      
     environment:
-      # Defina senhas fortes aqui
       - JWT_SECRET_KEY=TroqueIssoPorUmaSenhaSuperSeguraNoServidor
       - APP_USERNAME=admin
       - APP_PASSWORD=admin
-      # Caminhos internos do container
+      # Caminhos internos do container (não mude isso)
       - PATH_GERAL=/app/arquivos_sistema/Planilha_Potabilidade.xlsx
       - PATH_VISA=/app/arquivos_sistema/Planilha_VISA.xlsx
       - PATH_HACCP=/app/arquivos_sistema/Planilha_HACCP.xlsx
@@ -29,8 +31,7 @@ services:
     depends_on:
       - backend
     ports:
-      # Mapeia a porta 8085 do VPS para a porta 80 do container frontend
-      # Você usará essa porta 8085 na configuração do Nginx do Qualigestor (VPS)
+      # Porta 8085 da VPS -> Porta 80 do Nginx interno
       - "8085:80"
 
 volumes:

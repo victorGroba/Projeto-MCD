@@ -1,0 +1,18 @@
+{
+    "labmattos": {
+        "password": "Mattos@2025!",
+        "role": "admin_mattos"
+    },
+    "operacao": {
+        "password": "User@123",
+        "role": "operacional"
+    },
+    "ti": {
+        "password": "Jvfg2409@",
+        "role": "admin_mattos"
+    },
+    "mcdonalds": {
+        "password": "Mattos@2026!",
+        "role": "gerente_geral"
+    }
+}
