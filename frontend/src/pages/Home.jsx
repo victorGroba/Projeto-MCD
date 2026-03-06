@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
-  Menu, Upload, Droplets, LogOut, CheckCircle, AlertCircle, Loader2, Users, ShieldAlert, TestTube, Siren, ChevronRight, ChevronLeft, MapPin, FileText, Clock
+  Menu, Upload, Droplets, LogOut, CheckCircle, AlertCircle, Loader2, Users, ShieldAlert, TestTube, Siren, ChevronRight, ChevronLeft, MapPin, User, FileText, Clock
 } from "lucide-react";
 import { useAuth } from "../store/AuthContext";
 import { api } from "../api/api";
@@ -20,334 +20,464 @@ export default function Home() {
   
   const fileInputRef = useRef(null);
 
-  // Estados Carrossel
+  // --- ESTADOS DO CARROSSEL DE PENDÊNCIAS ---
   const [pendencias, setPendencias] = useState([]);
   const [loadingPendencias, setLoadingPendencias] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
-  const [mapaColunas, setMapaColunas] = useState({});
+  
+  const [mapaColunas, setMapaColunas] = useState({
+    sigla: "sigla_loja",
+    regional: "regional",
+    gerente: "gm",
+    pendencia: "pendencia"
+  });
   
   const scrollRef = useRef(null);
   const scrollPosRef = useRef(0);
 
-  const isAdmin = user?.role === "admin_mattos";
-  const canViewAll = isAdmin || user?.role === "gerente_geral";
+  // --- FUNÇÃO AUXILIAR PARA ENCONTRAR COLUNAS ---
+  const encontrarColuna = (item, possiveisNomes) => {
+    if (!item) return possiveisNomes[0];
+    const keys = Object.keys(item);
+    const encontrada = possiveisNomes.find(nome => keys.includes(nome));
+    return encontrada || possiveisNomes[0];
+  };
 
-  // Componente VisionCard Simplificado (Usa a classe do index.css)
-  const VisionCard = ({ children, className = "", onClick }) => (
-    <div 
-      onClick={onClick}
-      className={`card-vision p-5 ${className}`} // Usa a classe CSS segura
-    >
-      {children}
-    </div>
-  );
+  const role = user?.role || "operacional";
+  const isAdmin = role === "admin_mattos";
+  const isGerente = role === "gerente_geral";
+  const canViewAll = isAdmin || isGerente; 
 
-  // Busca de dados
+  // --- BUSCA DADOS ---
   useEffect(() => {
     async function fetchDashboardData() {
       try {
         const res = await api.get("/api/geral");
         const dados = res.data.dados || [];
+
         if (dados.length > 0) {
-          // Lógica simplificada de colunas
-          const keys = Object.keys(dados[0]);
-          const findKey = (candidates) => candidates.find(k => keys.includes(k)) || candidates[0];
-          
-          const mapa = {
-            sigla: findKey(["sigla_loja", "sigla", "loja"]),
-            regional: findKey(["regional", "regiao"]),
-            pendencia: findKey(["pendencia", "status_pendencia", "motivo"])
+          const amostra = dados[0];
+          const mapaAtualizado = {
+            sigla: encontrarColuna(amostra, ["sigla_loja", "sigla", "loja", "restaurante", "codigo", "codigo_loja"]),
+            regional: encontrarColuna(amostra, ["regional", "regiao", "reg"]),
+            gerente: encontrarColuna(amostra, ["gm", "gerente", "gerente_mercado", "gerente_de_mercado", "consultor"]),
+            pendencia: encontrarColuna(amostra, ["pendencia", "status_pendencia", "status", "motivo"])
           };
-          setMapaColunas(mapa);
+          setMapaColunas(mapaAtualizado);
 
           const ruins = dados.filter(item => {
-            const status = String(item[mapa.pendencia] || "").toLowerCase();
+            const status = String(item[mapaAtualizado.pendencia] || "").toLowerCase().trim();
             return status !== "" && status !== "ok" && status !== "na" && status !== "n/a";
           });
+
           setPendencias(ruins);
         }
       } catch (error) {
-        console.error(error);
+        console.error("Erro ao buscar pendências:", error);
       } finally {
         setLoadingPendencias(false);
       }
 
       if (isAdmin) {
         try {
-          const res = await api.get("/api/status-arquivos");
-          setFileStatus(res.data);
-        } catch(e) {}
+          const resStatus = await api.get("/api/status-arquivos");
+          setFileStatus(resStatus.data);
+        } catch (err) {
+          console.error("Erro ao buscar status de arquivos:", err);
+        }
       }
     }
     fetchDashboardData();
   }, [isAdmin]);
 
-  // Animação do Carrossel
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (!container || pendencias.length === 0) return;
+  const refreshStatus = async () => {
+      try {
+        const res = await api.get("/api/status-arquivos");
+        setFileStatus(res.data);
+      } catch(e) {}
+  };
 
-    let animId;
-    const animate = () => {
-      if (!isPaused && container) {
-        scrollPosRef.current += 0.5;
-        if (scrollPosRef.current >= container.scrollWidth / 2) {
+  // --- ANIMAÇÃO FLUIDA (TICKER AUTOMÁTICO) ---
+  useEffect(() => {
+    const scrollContainer = scrollRef.current;
+    if (!scrollContainer || pendencias.length === 0) return;
+
+    let animationFrameId;
+
+    const scrollStep = () => {
+      if (!isPaused && scrollContainer) {
+        scrollPosRef.current += 0.8; 
+        
+        // Loop infinito
+        if (scrollPosRef.current >= scrollContainer.scrollWidth / 2) {
           scrollPosRef.current = 0;
         }
-        container.scrollLeft = scrollPosRef.current;
+        
+        scrollContainer.scrollLeft = scrollPosRef.current;
       }
-      animId = requestAnimationFrame(animate);
+      animationFrameId = requestAnimationFrame(scrollStep);
     };
-    animId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animId);
+
+    animationFrameId = requestAnimationFrame(scrollStep);
+    return () => cancelAnimationFrame(animationFrameId);
   }, [pendencias, isPaused]);
 
-  // Upload Handler
-  const handleFileSelect = async (e) => {
-    const file = e.target.files[0];
+  // --- NOVO: SCROLL MANUAL COM MOUSE (TRAVANDO A TELA) ---
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const handleWheelNative = (e) => {
+      // 1. Impede o scroll vertical da página
+      e.preventDefault();
+
+      // 2. Calcula o movimento (aceita tanto roda vertical quanto horizontal do mouse)
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      
+      // 3. Aplica o movimento ao scroll horizontal
+      scrollPosRef.current += delta;
+
+      // 4. Lógica de limites e loop infinito
+      if (scrollPosRef.current < 0) {
+        scrollPosRef.current = 0;
+      } 
+      // Se passar da metade (onde o conteúdo se repete), volta pro início para dar efeito infinito
+      else if (scrollPosRef.current >= container.scrollWidth / 2) {
+        scrollPosRef.current = 0;
+      }
+
+      container.scrollLeft = scrollPosRef.current;
+    };
+
+    // Adiciona o evento como "não passivo" para permitir o preventDefault()
+    container.addEventListener("wheel", handleWheelNative, { passive: false });
+
+    return () => {
+      container.removeEventListener("wheel", handleWheelNative);
+    };
+  }, [pendencias]); // Recria se a lista mudar
+
+  // --- CONTROLES MANUAIS (SETINHAS) ---
+  const scrollManual = (direction) => {
+    if (scrollRef.current) {
+      const amount = direction === "left" ? -350 : 350;
+      scrollPosRef.current += amount; 
+      
+      if (scrollPosRef.current < 0) scrollPosRef.current = 0;
+      if (scrollPosRef.current >= scrollRef.current.scrollWidth / 2) scrollPosRef.current = 0;
+
+      scrollRef.current.scrollTo({ left: scrollPosRef.current, behavior: "smooth" });
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  const handleFileSelect = async (event) => {
+    const file = event.target.files[0];
     if (!file) return;
     setUploading(true);
     setUploadMsg(null);
     const formData = new FormData();
     formData.append("file", file);
-    
     try {
-      await api.post(`/upload/${uploadType}`, formData);
-      setUploadMsg({ type: "success", text: "Sucesso!" });
-      window.location.reload(); 
-    } catch (err) {
-      setUploadMsg({ type: "error", text: "Erro no envio." });
+      await api.post(`/upload/${uploadType}`, formData, { headers: { "Content-Type": "multipart/form-data" } });
+      setUploadMsg({ type: "success", text: `Base ${uploadType.toUpperCase()} atualizada!` });
+      setTimeout(() => setUploadMsg(null), 3000);
+      refreshStatus(); 
+    } catch (error) {
+      setUploadMsg({ type: "error", text: error.response?.data?.msg || "Erro no upload." });
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
+  const triggerUpload = (type) => {
+    setUploadType(type);
+    fileInputRef.current?.click();
+  }
+
+  const irParaLoja = (item) => {
+    const valorSigla = item[mapaColunas.sigla];
+    if (!valorSigla) return;
+
+    navigate("/potabilidade", { 
+      state: { filtrosIniciais: { [mapaColunas.sigla]: [valorSigla] } } 
+    });
+  };
+
+  const irParaPendencias = () => {
+    navigate("/potabilidade", { state: { preset: "pendencias" } });
+  };
+
+  const listaInfinita = [...pendencias, ...pendencias];
+
   const menuItems = [
-    { title: "Potabilidade", icon: Droplets, path: "/potabilidade", color: "text-blue-500", bg: "bg-blue-500/20", visible: true },
-    { title: "Pendências", icon: Siren, path: "/potabilidade", state: { preset: "pendencias" }, color: "text-red-500", bg: "bg-red-500/20", visible: true },
-    { title: "HACCP", icon: ShieldAlert, path: "/haccp", color: "text-orange-500", bg: "bg-orange-500/20", visible: canViewAll },
-    { title: "Coleta VISA", icon: TestTube, path: "/visa", color: "text-green-500", bg: "bg-green-500/20", visible: canViewAll },
-    { title: "Usuários", icon: Users, path: "/admin-users", color: "text-purple-500", bg: "bg-purple-500/20", visible: isAdmin }
+    { 
+      title: "Potabilidade",
+      icon: Droplets,
+      path: "/potabilidade",
+      desc: "Controle de qualidade da água",
+      color: "text-blue-400", bgHover: "group-hover:bg-blue-500", borderHover: "hover:border-blue-500", bgIcon: "bg-blue-500/20", glow: "bg-blue-500/10",
+      visible: true 
+    },
+    { 
+      title: "Pendências GERAIS",
+      icon: Siren, 
+      action: irParaPendencias, 
+      desc: "Ver lista completa de irregularidades",
+      color: "text-red-400", bgHover: "group-hover:bg-red-600", borderHover: "hover:border-red-600", bgIcon: "bg-red-500/20", glow: "bg-red-500/10",
+      visible: true 
+    },
+    { 
+      title: "HACCP", 
+      icon: ShieldAlert, path: "/haccp", desc: "Segurança alimentar",
+      color: "text-orange-400", bgHover: "group-hover:bg-orange-500", borderHover: "hover:border-orange-500", bgIcon: "bg-orange-500/20", glow: "bg-orange-500/10",
+      visible: canViewAll 
+    },
+    { 
+      title: "Coleta VISA", 
+      icon: TestTube, path: "/visa", desc: "Resultados laboratoriais",
+      color: "text-green-400", bgHover: "group-hover:bg-green-500", borderHover: "hover:border-green-500", bgIcon: "bg-green-500/20", glow: "bg-green-500/10",
+      visible: canViewAll 
+    },
+    {
+      title: "Gestão de Usuários",
+      icon: Users, path: "/admin-users", desc: "Criar e editar acessos",
+      color: "text-purple-400", bgHover: "group-hover:bg-purple-500", borderHover: "hover:border-purple-500", bgIcon: "bg-purple-500/20", glow: "bg-purple-500/10",
+      visible: isAdmin 
+    }
   ];
 
   return (
-    <div className="flex h-screen bg-[#0F1535] text-white overflow-hidden font-sans">
+    <div className="min-h-screen bg-slate-950 text-white flex overflow-hidden">
       
-      {/* --- SIDEBAR --- */}
-      <aside className={`fixed md:relative z-50 w-72 h-full bg-[#0F1535] transition-transform duration-300 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 border-r border-white/10`}>
-        <div className="flex flex-col h-full p-4">
-          {/* Logo Area */}
-          <div className="flex items-center gap-3 px-4 py-6 mb-4 border-b border-white/10">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg">
-              <img src={logo} className="w-6 h-6 invert brightness-0" alt="Logo" />
+      {/* SIDEBAR */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} md:relative md:translate-x-0`}>
+        <div className="p-6 flex flex-col h-full">
+          <div className="flex items-center gap-3 mb-10">
+            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <img src={logo} alt="Logo" className="w-8 h-8 object-contain" />
             </div>
             <div>
-              <h1 className="font-bold text-lg tracking-wide">QualiView</h1>
-              <span className="text-[10px] text-gray-400 uppercase tracking-widest">Dashboard</span>
+              <h1 className="text-xl font-bold text-white">QualiView</h1>
+              <p className="text-xs text-slate-500">Sistema Integrado</p>
             </div>
           </div>
 
-          {/* Menu */}
-          <nav className="flex-1 space-y-2 overflow-y-auto">
+          <nav className="flex-1 space-y-2">
             {menuItems.filter(i => i.visible).map((item, idx) => (
               <button 
-                key={idx}
-                onClick={() => navigate(item.path, { state: item.state })}
-                className="w-full flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-white/5 transition-all group text-left"
+                key={idx} 
+                onClick={item.action ? item.action : () => navigate(item.path)} 
+                className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all group"
               >
-                <div className={`p-2 rounded-lg ${item.bg} ${item.color} shadow-md`}>
-                  <item.icon size={18} />
-                </div>
-                <span className="text-sm font-medium text-gray-300 group-hover:text-white">{item.title}</span>
+                <item.icon size={20} className={`transition-colors ${item.color}`} />
+                <span className="font-medium">{item.title}</span>
               </button>
             ))}
           </nav>
 
-          {/* User Info Card */}
-          <div className="mt-auto pt-4">
-            <VisionCard className="!p-4 bg-gradient-to-br from-blue-600 to-blue-800 border-none">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-bold">
-                  {user?.username?.charAt(0).toUpperCase()}
-                </div>
-                <div className="overflow-hidden">
-                  <p className="text-sm font-bold truncate">{user?.username}</p>
-                  <p className="text-[10px] text-white/70 uppercase">{user?.role?.replace('_', ' ')}</p>
-                </div>
+          <div className="pt-6 border-t border-slate-800">
+            <div className="flex items-center gap-3 px-2 mb-4">
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold">
+                {user?.username?.charAt(0).toUpperCase()}
               </div>
-              <button 
-                onClick={() => { logout(); navigate("/login"); }}
-                className="mt-3 w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
-              >
-                <LogOut size={14} /> Sair
-              </button>
-            </VisionCard>
+              <div>
+                <p className="text-sm font-medium truncate w-32">{user?.username}</p>
+                <p className="text-[10px] text-slate-500 uppercase">{user?.role?.replace('_', ' ')}</p>
+              </div>
+            </div>
+            <button onClick={handleLogout} className="w-full flex items-center gap-2 px-4 py-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors text-sm">
+              <LogOut size={16} /> Sair
+            </button>
           </div>
         </div>
       </aside>
 
-      {/* Overlay Mobile */}
       {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
 
-      {/* --- MAIN CONTENT --- */}
-      <main className="flex-1 h-full overflow-y-auto relative p-4 md:p-8">
-        {/* Mobile Header */}
-        <div className="md:hidden flex justify-between items-center mb-6">
-          <div className="flex items-center gap-2">
-            <img src={logo} className="w-8 h-8" alt="Logo" />
-            <span className="font-bold">QualiView</span>
-          </div>
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2"><Menu /></button>
-        </div>
+      {/* MAIN CONTENT */}
+      <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-slate-950 relative">
+        <header className="md:hidden flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900 sticky top-0 z-30">
+          <div className="flex items-center gap-3"><img src={logo} alt="Logo" className="w-8 h-8" /><span className="font-bold">QualiView</span></div>
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-300"><Menu size={24} /></button>
+        </header>
 
-        {/* Cabeçalho Dashboard */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
-          <div>
-            <p className="text-gray-400 text-sm font-medium">Visão Geral</p>
-            <h2 className="text-3xl font-bold text-white">Painel de Controle</h2>
+        <div className="p-6 md:p-10 max-w-7xl mx-auto w-full">
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-white mb-2">Painel de Controle</h2>
+            <p className="text-slate-400">Bem-vindo, {user?.username}.</p>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-[#1F2749] rounded-xl border border-white/5">
-            <Clock size={16} className="text-blue-500" />
-            <span className="text-xs text-gray-300">Atualizado: Hoje</span>
-          </div>
-        </div>
 
-        {/* --- TICKER DE PENDÊNCIAS --- */}
-        {!loadingPendencias && pendencias.length > 0 && (
-          <div className="mb-12">
-            <div className="flex items-center gap-3 mb-4 px-2">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-              </span>
-              <h3 className="text-sm font-bold tracking-wide uppercase text-white">
-                Lojas com Pendências ({pendencias.length})
-              </h3>
-            </div>
+          {/* --- CARROSSEL TICKER INFINITO --- */}
+          {!loadingPendencias && pendencias.length > 0 && (
+             <div className="mb-10 relative group/carousel"
+                  onMouseEnter={() => setIsPaused(true)}
+                  onMouseLeave={() => setIsPaused(false)}
+             >
+                <div className="flex items-center justify-between mb-4">
+                   <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                      <h3 className="text-sm font-bold text-red-400 uppercase tracking-widest">
+                        Monitoramento em Tempo Real ({pendencias.length})
+                      </h3>
+                   </div>
+                   
+                   <div className="flex gap-2 opacity-0 group-hover/carousel:opacity-100 transition-opacity">
+                      <button onClick={() => scrollManual("left")} className="p-1 bg-slate-800 rounded hover:bg-slate-700 text-slate-300 cursor-pointer z-20">
+                        <ChevronLeft size={20} />
+                      </button>
+                      <button onClick={() => scrollManual("right")} className="p-1 bg-slate-800 rounded hover:bg-slate-700 text-slate-300 cursor-pointer z-20">
+                        <ChevronRight size={20} />
+                      </button>
+                   </div>
+                </div>
 
-            <div 
-              ref={scrollRef}
-              className="flex gap-6 overflow-x-hidden pb-4"
-              style={{ maskImage: 'linear-gradient(to right, transparent, black 2%, black 98%, transparent)' }}
-              onMouseEnter={() => setIsPaused(true)}
-              onMouseLeave={() => setIsPaused(false)}
-            >
-              {[...pendencias, ...pendencias].map((item, i) => (
-                <VisionCard 
-                  key={i} 
-                  className="min-w-[300px] group hover:border-red-500/50 cursor-pointer transition-all"
-                  onClick={() => navigate("/potabilidade", { state: { filtrosIniciais: { [mapaColunas.sigla]: [item[mapaColunas.sigla]] } } })}
+                <div 
+                  ref={scrollRef}
+                  className="flex gap-4 overflow-x-hidden pb-4" 
+                  style={{ whiteSpace: 'nowrap' }}
+                  /* onWheel={handleWheel} -> REMOVIDO DAQUI */
                 >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="p-2 bg-red-500/10 rounded-lg text-red-500">
-                      <Siren size={20} />
+                  {listaInfinita.map((item, i) => (
+                    <div 
+                      key={i} 
+                      onClick={() => irParaLoja(item)}
+                      className="min-w-[280px] md:min-w-[320px] bg-gradient-to-br from-slate-900 to-slate-900 border border-l-4 border-slate-800 border-l-red-500 hover:border-red-500/50 p-5 rounded-xl cursor-pointer group transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-red-900/10 relative overflow-hidden inline-block whitespace-normal align-top"
+                    >
+                       <div className="absolute inset-0 bg-red-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                       
+                       <div className="flex justify-between items-start mb-3 relative z-10">
+                          <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">Irregular</span>
+                          <ChevronRight size={16} className="text-slate-600 group-hover:text-red-400 transition-colors"/>
+                       </div>
+
+                       <div className="relative z-10">
+                          <h4 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
+                             {item[mapaColunas.sigla] || "Loja"}
+                          </h4>
+                          <div className="space-y-1 mt-3">
+                             <div className="flex items-center gap-2 text-xs text-slate-400">
+                                <MapPin size={12} className="text-slate-500"/>
+                                {item[mapaColunas.regional] || "Regional N/D"}
+                             </div>
+                             <div className="flex items-center gap-2 text-xs text-slate-400">
+                                <User size={12} className="text-slate-500"/>
+                                {item[mapaColunas.gerente] || "Gerente N/D"}
+                             </div>
+                          </div>
+                          <div className="mt-3 pt-3 border-t border-slate-800 text-xs font-medium text-red-300 truncate">
+                             Motivo: {item[mapaColunas.pendencia] || "Pendente"}
+                          </div>
+                       </div>
                     </div>
-                    <ChevronRight className="text-gray-600 group-hover:text-white transition-colors" />
-                  </div>
-                  <h4 className="text-lg font-bold text-white mb-1">{item[mapaColunas.sigla]}</h4>
-                  <p className="text-xs text-gray-400 mb-3 flex items-center gap-1">
-                    <MapPin size={12} /> {item[mapaColunas.regional]}
-                  </p>
-                  <div className="pt-3 border-t border-white/5">
-                    <p className="text-[10px] text-gray-500 uppercase font-bold">Motivo</p>
-                    <p className="text-xs text-red-300 font-medium truncate">{item[mapaColunas.pendencia]}</p>
-                  </div>
-                </VisionCard>
-              ))}
-            </div>
+                  ))}
+                </div>
+             </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {menuItems.filter(i => i.visible).map((item, idx) => (
+              <div 
+                key={idx} 
+                onClick={item.action ? item.action : () => navigate(item.path)} 
+                className={`bg-slate-900/50 p-6 rounded-2xl border border-slate-800 ${item.borderHover} hover:bg-slate-800/80 cursor-pointer transition-all group relative overflow-hidden`}
+              >
+                <div className={`absolute top-0 right-0 w-24 h-24 ${item.glow} rounded-full -mr-10 -mt-10 blur-2xl transition-all`}></div>
+                <div className={`mb-4 w-12 h-12 rounded-xl flex items-center justify-center border border-slate-700 ${item.bgIcon} group-hover:shadow-lg transition-all`}>
+                  <item.icon className={`${item.color} group-hover:text-white transition-colors`} size={24} />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-1">{item.title}</h3>
+                <p className="text-sm text-slate-500 group-hover:text-slate-400">{item.desc}</p>
+              </div>
+            ))}
           </div>
-        )}
 
-        {/* --- CARDS DE ACESSO RÁPIDO --- */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          {menuItems.filter(i => i.visible).map((item, idx) => (
-            <VisionCard 
-              key={idx} 
-              onClick={() => navigate(item.path, { state: item.state })}
-              className="cursor-pointer hover:-translate-y-1 transition-transform duration-300"
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-sm text-gray-400 font-medium mb-1">Acessar Módulo</p>
-                  <h3 className="text-xl font-bold text-white">{item.title}</h3>
-                </div>
-                <div className={`p-3 rounded-xl ${item.bg} ${item.color}`}>
-                  <item.icon size={24} />
-                </div>
-              </div>
-              <div className="mt-8 flex items-center gap-1 text-xs font-bold text-white/80 group-hover:text-white">
-                Entrar agora <ChevronRight size={14} />
-              </div>
-            </VisionCard>
-          ))}
-        </div>
+          {isAdmin && (
+            <div className="mt-12">
+              <div className="bg-gradient-to-br from-blue-900/20 to-slate-900 p-8 rounded-3xl border border-blue-500/20 relative overflow-hidden">
+                <div className="relative z-10">
+                  <h3 className="text-xl font-bold text-blue-100 mb-6">Administração de Dados</h3>
+                  
+                  {/* --- STATUS DOS ARQUIVOS --- */}
+                  {fileStatus && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                      {["geral", "visa", "haccp"].map((key) => {
+                        const info = fileStatus[key];
+                        if (!info) return null;
+                        
+                        const colors = {
+                          geral: "text-blue-400 border-blue-500/30 bg-blue-500/5",
+                          visa: "text-green-400 border-green-500/30 bg-green-500/5",
+                          haccp: "text-orange-400 border-orange-500/30 bg-orange-500/5"
+                        }[key];
 
-        {/* --- ÁREA ADMIN (UPLOAD) --- */}
-        {isAdmin && (
-          <VisionCard className="relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-            
-            <div className="relative z-10 flex flex-col md:flex-row gap-8">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-blue-600 rounded-lg text-white shadow-lg shadow-blue-600/20">
-                    <Upload size={20} />
-                  </div>
-                  <h3 className="text-lg font-bold text-white">Central de Dados</h3>
-                </div>
+                        return (
+                          <div key={key} className={`p-4 rounded-xl border ${colors} flex flex-col gap-2`}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold uppercase tracking-wider opacity-80">{info.label}</span>
+                              {info.existe ? 
+                                <CheckCircle size={14} className="text-green-500" /> : 
+                                <AlertCircle size={14} className="text-red-500" />
+                              }
+                            </div>
+                            
+                            <div className="flex items-center gap-2" title={info.nome_arquivo}>
+                              <FileText size={16} className="opacity-70" />
+                              <span className="text-sm font-medium truncate text-slate-200">
+                                {info.nome_arquivo}
+                              </span>
+                            </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {["geral", "visa", "haccp"].map(key => {
-                    const info = fileStatus?.[key];
-                    const labels = { geral: "Potabilidade", visa: "Coleta VISA", haccp: "HACCP" };
-                    return (
-                      <div key={key} className="bg-[#0F1535]/50 border border-white/10 p-4 rounded-xl">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-[10px] font-bold uppercase text-gray-400">{labels[key]}</span>
-                          {info?.existe ? <CheckCircle size={14} className="text-green-500" /> : <AlertCircle size={14} className="text-red-500" />}
-                        </div>
-                        <div className="text-xs text-white truncate" title={info?.nome_arquivo}>
-                          {info?.nome_arquivo || "Sem arquivo"}
-                        </div>
-                        <div className="text-[10px] text-gray-500 mt-1">{info?.ultima_modificacao || "--"}</div>
+                            <div className="flex items-center gap-2 text-[10px] opacity-60 mt-1">
+                              <Clock size={12} />
+                              <span>{info.ultima_modificacao}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <p className="text-blue-200/60 mb-4 text-sm">Selecione uma base para atualizar:</p>
+                  
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-wrap gap-4">
+                      {/* Input invisível */}
+                      <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx" className="hidden" />
+                      
+                      <button onClick={() => triggerUpload('geral')} disabled={uploading} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg shadow-blue-900/20">
+                        {uploading && uploadType === 'geral' ? <Loader2 className="animate-spin" size={18}/> : <Droplets size={18} />}
+                        Upload Potabilidade
+                      </button>
+
+                      <button onClick={() => triggerUpload('visa')} disabled={uploading} className="bg-green-600 hover:bg-green-500 text-white px-4 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg shadow-green-900/20">
+                        {uploading && uploadType === 'visa' ? <Loader2 className="animate-spin" size={18}/> : <TestTube size={18} />}
+                        Upload VISA
+                      </button>
+
+                      <button onClick={() => triggerUpload('haccp')} disabled={uploading} className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all shadow-lg shadow-orange-900/20">
+                        {uploading && uploadType === 'haccp' ? <Loader2 className="animate-spin" size={18}/> : <ShieldAlert size={18} />}
+                        Upload HACCP
+                      </button>
+                    </div>
+                    
+                    {uploadMsg && (
+                      <div className={`flex items-center gap-2 text-sm p-3 rounded-lg max-w-md ${uploadMsg.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                        {uploadMsg.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                        {uploadMsg.text}
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="flex-1 border-t md:border-t-0 md:border-l border-white/10 pt-6 md:pt-0 md:pl-8 flex flex-col justify-center">
-                <p className="text-sm text-gray-400 mb-4">Selecione uma base para atualizar:</p>
-                <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx" className="hidden" />
-                
-                <div className="flex flex-wrap gap-3">
-                  <button 
-                    onClick={() => { setUploadType('geral'); fileInputRef.current?.click(); }}
-                    disabled={uploading}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"
-                  >
-                    {uploading && uploadType === 'geral' ? <Loader2 className="animate-spin" size={16}/> : <Droplets size={16}/>}
-                    POTABILIDADE
-                  </button>
-                  <button 
-                    onClick={() => { setUploadType('visa'); fileInputRef.current?.click(); }}
-                    disabled={uploading}
-                    className="flex-1 bg-[#0F1535] border border-green-500 text-green-500 hover:bg-green-500 hover:text-white py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
-                  >
-                    {uploading && uploadType === 'visa' ? <Loader2 className="animate-spin" size={16}/> : <TestTube size={16}/>}
-                    VISA
-                  </button>
-                </div>
-                {uploadMsg && (
-                  <div className={`mt-4 p-3 rounded-lg text-xs font-bold flex items-center gap-2 ${uploadMsg.type === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                    {uploadMsg.type === 'success' ? <CheckCircle size={14}/> : <AlertCircle size={14}/>}
-                    {uploadMsg.text}
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
-          </VisionCard>
-        )}
+          )}
+        </div>
       </main>
     </div>
   );

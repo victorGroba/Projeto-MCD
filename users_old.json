@@ -1,0 +1,14 @@
+{
+    "labmattos": {
+        "password": "Mattos@2025!",
+        "role": "admin_mattos"
+    },
+    "gerente_mcd": {
+        "password": "Mcd@2025!",
+        "role": "gerente_geral"
+    },
+    "operacao": {
+        "password": "User@123",
+        "role": "operacional"
+    }
+}
