@@ -15,11 +15,16 @@ import {
 } from "chart.js";
 
 // --- PLUGIN PARA VALORES E PORCENTAGEM ---
-// Calcula % baseada na soma de (Satisfatório + Insatisfatório)
 const drawValuesPlugin = {
   id: "drawValues",
   afterDatasetsDraw(chart) {
     const { ctx } = chart;
+
+    const isStatusChart = chart.data.labels && chart.data.labels.length === 4 &&
+      chart.data.labels[0] === "Programado" &&
+      chart.data.labels[1] === "Insatisfatório" &&
+      chart.data.labels[2] === "Satisfatório" &&
+      chart.data.labels[3] === "Pendente";
 
     // Tenta encontrar os datasets de Satisfatório e Insatisfatório para calcular o total realizado
     const dsSat = chart.data.datasets.find(d => d.label === "Satisfatório");
@@ -28,6 +33,11 @@ const drawValuesPlugin = {
     chart.data.datasets.forEach((dataset, i) => {
       const meta = chart.getDatasetMeta(i);
       if (meta.hidden) return;
+
+      let totalRegion = 0;
+      if (isStatusChart) {
+        totalRegion = dataset.data.reduce((acc, val) => acc + (Number(val) || 0), 0);
+      }
 
       meta.data.forEach((element, index) => {
         const value = dataset.data[index];
@@ -42,8 +52,23 @@ const drawValuesPlugin = {
 
           let text = value.toString();
 
-          // Lógica de % apenas para as barras de resultado (Sat/Insat)
-          if ((dataset.label === "Satisfatório" || dataset.label === "Insatisfatório") && dsSat && dsInsat) {
+          // Lógica de % para gráficos de Status
+          if (isStatusChart) {
+            if (totalRegion > 0) {
+              const pct = ((value / totalRegion) * 100).toFixed(1).replace('.', ',');
+
+              ctx.fillText(value.toString(), element.x, element.y - 14);
+
+              ctx.font = "bold 9px sans-serif";
+              ctx.fillStyle = "#cbd5e1";
+              ctx.fillText(`(${pct}%)`, element.x, element.y - 2);
+
+              ctx.restore();
+              return;
+            }
+          }
+          // Lógica de % apenas para as barras de resultado (Sat/Insat) legadas
+          else if ((dataset.label === "Satisfatório" || dataset.label === "Insatisfatório") && dsSat && dsInsat) {
             const valSat = dsSat.data[index] || 0;
             const valInsat = dsInsat.data[index] || 0;
             const totalRealizado = valSat + valInsat;
@@ -193,7 +218,20 @@ export default function TelaGraficos() {
       });
     }
 
-    const excelColors = ["#3b82f6", "#f97316", "#94a3b8", "#eab308", "#22c55e"];
+    const excelColors = [
+      "#4285F4", // azul (janeiro)
+      "#C53929", // vermelho escuro (fevereiro)
+      "#9CCC65", // verde claro (março)
+      "#7E57C2", // roxo (abril)
+      "#26A69A", // turquesa (maio)
+      "#FF9800", // laranja (junho)
+      "#5E35B1", // indigo
+      "#EF5350", // vermelho claro
+      "#8BC34A", // lime
+      "#AB47BC", // roxo claro
+      "#00ACC1", // cyan
+      "#FFA726"  // laranja claro
+    ];
     const datasets = keys.map((key, index) => ({
       label: key,
       data: apiData.valores[key],
@@ -206,12 +244,16 @@ export default function TelaGraficos() {
     return { labels, datasets };
   };
 
-  // --- 3. Gráficos Legados (Evolução, Top Pendências) ---
+  // --- 4. Gráficos Top Pendências ---
   const buildPendenciasTopChart = (apiData) => {
     if (!apiData || !apiData.valores) return { labels: [], datasets: [] };
 
     const labels = apiData.labels || [];
     const keys = Object.keys(apiData.valores);
+    const excelColors = [
+      "#3b82f6", "#f97316", "#94a3b8", "#eab308", "#22c55e",
+      "#ef4444", "#a855f7", "#ec4899", "#84cc16", "#06b6d4"
+    ];
     const datasets = keys.map((key, index) => ({
       label: key,
       data: apiData.valores[key],
@@ -268,6 +310,30 @@ export default function TelaGraficos() {
     scales: {
       x: { ticks: { color: "#94a3b8" }, grid: { display: false } },
       y: { ticks: { color: "#94a3b8" }, grid: { color: "#334155" }, beginAtZero: true }
+    }
+  };
+
+  const statusOptions = {
+    ...commonOptions,
+    layout: { padding: { top: 25 } },
+    plugins: {
+      ...commonOptions.plugins,
+      legend: { position: 'top', labels: { color: "#cbd5e1" } },
+      tooltip: {
+        ...commonOptions.plugins.tooltip,
+        callbacks: {
+          label: function (context) {
+            const dataset = context.dataset;
+            const value = dataset.data[context.dataIndex];
+            const total = dataset.data.reduce((acc, val) => acc + (Number(val) || 0), 0);
+            if (total > 0 && value > 0) {
+              const pct = ((value / total) * 100).toFixed(1).replace('.', ',');
+              return `${dataset.label}: ${value} (${pct}%)`;
+            }
+            return `${dataset.label}: ${value}`;
+          }
+        }
+      }
     }
   };
 
@@ -393,13 +459,7 @@ export default function TelaGraficos() {
             <div className="h-96">
               <Bar
                 data={buildStatusChart(data?.backroom)}
-                options={{
-                  ...commonOptions,
-                  plugins: {
-                    ...commonOptions.plugins,
-                    legend: { position: 'top', labels: { color: "#cbd5e1" } }
-                  }
-                }}
+                options={statusOptions}
               />
             </div>
           </div>
@@ -410,13 +470,7 @@ export default function TelaGraficos() {
             <div className="h-96">
               <Bar
                 data={buildStatusChart(data?.gelo)}
-                options={{
-                  ...commonOptions,
-                  plugins: {
-                    ...commonOptions.plugins,
-                    legend: { position: 'top', labels: { color: "#cbd5e1" } }
-                  }
-                }}
+                options={statusOptions}
               />
             </div>
           </div>

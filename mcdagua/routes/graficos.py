@@ -5,6 +5,7 @@ from mcdagua.core.loader import load_geral_dataframe, load_haccp_graphics_data
 from mcdagua.services.excel_processor import (
     ler_range_exato, 
     processar_evolucao_anual_anos, # NOVA FUNÇÃO
+    processar_pendencias_regional_meses, # NOVO FORMATO
     processar_regional_ok_nok,     # RENOMEADA para clareza
     processar_status_bloco, 
     processar_pendencias_top,
@@ -41,10 +42,10 @@ def graficos_data():
         # Usa a função nova que entende colunas de anos
         response_data["restaurante_anual"] = processar_evolucao_anual_anos(df_anual)
 
-        # 2. PENDÊNCIAS POR REGIONAL (K20:O32) -> Mantém OK/NOK
+        # 2. PENDÊNCIAS POR REGIONAL (K20:O32) -> Novo Formato
         print(f"📂 Lendo Regional: {ABA} K20:O32")
         df_regional = ler_range_exato(path, ABA, "20:32", usecols="K:O")
-        response_data["restaurante_regional"] = processar_regional_ok_nok(df_regional)
+        response_data["restaurante_regional"] = processar_pendencias_regional_meses(df_regional)
 
         # 3. BACK ROOM STATUS (K38:O42)
         print(f"📂 Lendo Back Room: {ABA} K38:O42")

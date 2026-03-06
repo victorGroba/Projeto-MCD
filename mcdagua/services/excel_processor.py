@@ -68,10 +68,45 @@ def processar_evolucao_anual_anos(df):
 
     return {"labels": labels, "valores": valores}
 
-# --- PROCESSADOR DE REGIONAL (Mantido OK/NOK) ---
+# --- PROCESSADOR DE REGIONAL (NOVO FORMATO: Meses VS Regionais) ---
+def processar_pendencias_regional_meses(df):
+    """
+    Para Regional (K20:O32)
+    Linha 0: Mês, BRA, RSOU, SAO1, SAO2
+    Linhas 1+: janeiro, fevereiro, etc.
+    Retorna X-axis = regionais, Datasets = meses
+    """
+    if df is None or df.empty: return {}
+
+    header = df.iloc[0]
+    regionais = []
+    
+    for i in range(1, len(header)):
+        reg_label = str(header[i]).strip() 
+        regionais.append(reg_label)
+
+    df_dados = df.iloc[1:]
+    
+    valores_por_mes = {}
+    
+    for _, row in df_dados.iterrows():
+        mes = str(row.iloc[0]).strip()
+        if mes.lower() in ["nan", "none", ""]: continue
+        
+        valores_mes = []
+        for i in range(1, len(header)):
+            val = pd.to_numeric(row.iloc[i], errors='coerce')
+            val = 0 if pd.isna(val) else int(val)
+            valores_mes.append(val)
+            
+        valores_por_mes[mes] = valores_mes
+
+    return {"labels": regionais, "valores": valores_por_mes}
+
+# --- PROCESSADOR DE REGIONAL Antigo (Mantido) ---
 def processar_regional_ok_nok(df):
     """
-    Para Regional (K20:O32). Mantém a lógica de OK/NOK.
+    Mantido para backward compatibility se precisar.
     """
     if df is None or df.empty: return {}
     idx_total, idx_ok, idx_nok = 1, -2, -1
