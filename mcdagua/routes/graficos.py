@@ -10,7 +10,11 @@ from mcdagua.services.excel_processor import (
     processar_pendencias_top,
     processar_aba_geral
 )
-from mcdagua.services.kpis import get_programado_realizado
+from mcdagua.services.kpis import (
+    get_programado_realizado, 
+    get_tipo_coleta_por_mes, 
+    get_nao_conformidade_por_gerente
+)
 
 graficos_bp = Blueprint("graficos", __name__)
 
@@ -32,8 +36,8 @@ def graficos_data():
         ABA = "Gráfico pendencia"
 
         # 1. EVOLUÇÃO ANUAL (K3:N15) -> AGORA LÊ ANOS (2023, 2024...)
-        print(f"📂 Lendo Anual: {ABA} K3:N15")
-        df_anual = ler_range_exato(path, ABA, "3:15", usecols="K:N")
+        print(f"📂 Lendo Anual: {ABA} K3:O15")
+        df_anual = ler_range_exato(path, ABA, "3:15", usecols="K:O")
         # Usa a função nova que entende colunas de anos
         response_data["restaurante_anual"] = processar_evolucao_anual_anos(df_anual)
 
@@ -57,9 +61,11 @@ def graficos_data():
         df_pend = ler_range_exato(path, ABA, "65:69", usecols="K:N")
         response_data["pendencias_gelo"] = processar_pendencias_top(df_pend)
 
-        # Extras
+        # Extras (dados da aba GERAL)
         df_geral = load_geral_dataframe()
         response_data["programado_realizado"] = get_programado_realizado(df_geral)
+        response_data["tipo_coleta"] = get_tipo_coleta_por_mes(df_geral)
+        response_data["nao_conformidade_gm"] = get_nao_conformidade_por_gerente(df_geral)
         try:
             dados_geral, _ = processar_aba_geral(path)
             if dados_geral and "detalhes_parametros" in dados_geral:

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Line, Bar } from "react-chartjs-2";
 import { api } from "../api/api";
-import { ArrowLeft, RefreshCw, BarChart2, Target, AlertTriangle } from "lucide-react";
+import { ArrowLeft, RefreshCw, BarChart2, Target, AlertTriangle, List, UserX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   Chart as ChartJS,
@@ -20,7 +20,7 @@ const drawValuesPlugin = {
   id: "drawValues",
   afterDatasetsDraw(chart) {
     const { ctx } = chart;
-    
+
     // Tenta encontrar os datasets de Satisfatório e Insatisfatório para calcular o total realizado
     const dsSat = chart.data.datasets.find(d => d.label === "Satisfatório");
     const dsInsat = chart.data.datasets.find(d => d.label === "Insatisfatório");
@@ -28,10 +28,10 @@ const drawValuesPlugin = {
     chart.data.datasets.forEach((dataset, i) => {
       const meta = chart.getDatasetMeta(i);
       if (meta.hidden) return;
-      
+
       meta.data.forEach((element, index) => {
         const value = dataset.data[index];
-        
+
         // Só desenha se tiver valor > 0
         if (value !== null && value !== undefined && value > 0) {
           ctx.save();
@@ -39,9 +39,9 @@ const drawValuesPlugin = {
           ctx.font = "bold 10px sans-serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "bottom";
-          
+
           let text = value.toString();
-          
+
           // Lógica de % apenas para as barras de resultado (Sat/Insat)
           if ((dataset.label === "Satisfatório" || dataset.label === "Insatisfatório") && dsSat && dsInsat) {
             const valSat = dsSat.data[index] || 0;
@@ -49,7 +49,7 @@ const drawValuesPlugin = {
             const totalRealizado = valSat + valInsat;
 
             if (totalRealizado > 0) {
-              const pct = ((value / totalRealizado) * 100).toFixed(0); 
+              const pct = ((value / totalRealizado) * 100).toFixed(0);
               text = `${value} (${pct}%)`;
             }
           }
@@ -114,58 +114,68 @@ export default function TelaGraficos() {
     };
   };
 
+  // --- 2. Tipo de Coleta por Mês ---
+  const buildTipoColetaChart = (apiData) => {
+    if (!apiData) return { labels: [], datasets: [] };
+    return {
+      labels: apiData.labels,
+      datasets: [
+        { label: "Coleta", data: apiData.coleta, backgroundColor: "#3b82f6", borderRadius: 4 },
+        { label: "Recoleta", data: apiData.recoleta, backgroundColor: "#f97316", borderRadius: 4 },
+        { label: "Checklist", data: apiData.checklist, backgroundColor: "#94a3b8", borderRadius: 4 }
+      ]
+    };
+  };
+
+  // --- 3. Não Conformidade por Gerente ---
+  const buildNaoConformidadeChart = (apiData) => {
+    if (!apiData || !apiData.labels) return { labels: [], datasets: [] };
+    return {
+      labels: apiData.labels,
+      datasets: [
+        {
+          label: "Pendências",
+          data: apiData.valores,
+          backgroundColor: "#ef4444",
+          borderRadius: 4,
+          barThickness: 22
+        }
+      ]
+    };
+  };
+
   // --- 2. Status por Regional (4 Barras) ---
   const buildStatusChart = (apiData) => {
     if (!apiData || !apiData.valores) return { labels: [], datasets: [] };
 
-    // Recupera os arrays brutos
+    const regionais = apiData.labels || []; // ["RSOU", "BRA", "SAO1", "SAO2"]
     const totais = apiData.valores["Total"] || [];
     const oks = apiData.valores["OK"] || [];
     const noks = apiData.valores["NOK"] || [];
-    
-    // Calcula pendentes: Programado - (OK + NOK)
-    const pendentes = totais.map((total, idx) => {
-        const realizado = (oks[idx] || 0) + (noks[idx] || 0);
-        return Math.max(0, total - realizado);
-    });
+    const pendentes = apiData.valores["Pendentes"] || Array(totais.length).fill(0);
 
-    return {
-      labels: apiData.labels, // Siglas das Regionais
-      datasets: [
-        {
-          label: "Programado",
-          data: totais,
-          backgroundColor: "#3b82f6", // Azul
-          borderRadius: 3,
-          barPercentage: 0.8,
-          categoryPercentage: 0.8
-        },
-        {
-          label: "Pendente",
-          data: pendentes,
-          backgroundColor: "#94a3b8", // Cinza
-          borderRadius: 3,
-           barPercentage: 0.8,
-          categoryPercentage: 0.8
-        },
-        {
-          label: "Satisfatório",
-          data: oks,
-          backgroundColor: "#22c55e", // Verde
-          borderRadius: 3,
-           barPercentage: 0.8,
-          categoryPercentage: 0.8
-        },
-        {
-          label: "Insatisfatório",
-          data: noks,
-          backgroundColor: "#ef4444", // Vermelho
-          borderRadius: 3,
-           barPercentage: 0.8,
-          categoryPercentage: 0.8
-        }
-      ]
-    };
+    // Categorias no eixo X
+    const categorias = ["Programado", "Insatisfatório", "Satisfatório", "Pendente"];
+
+    // Cores distintas para cada regional
+    const coresRegionais = ["#3b82f6", "#dc2626", "#65a30d", "#7c3aed", "#f59e0b", "#06b6d4"];
+
+    // Cada regional vira um dataset com 4 valores (um para cada categoria)
+    const datasets = regionais.map((regional, idx) => ({
+      label: regional,
+      data: [
+        totais[idx] || 0,      // Programado
+        noks[idx] || 0,        // Insatisfatório
+        oks[idx] || 0,         // Satisfatório
+        pendentes[idx] || 0    // Pendente
+      ],
+      backgroundColor: coresRegionais[idx % coresRegionais.length],
+      borderRadius: 3,
+      barPercentage: 0.85,
+      categoryPercentage: 0.85
+    }));
+
+    return { labels: categorias, datasets };
   };
 
   // --- 3. Gráficos Legados (Evolução, Top Pendências) ---
@@ -173,7 +183,7 @@ export default function TelaGraficos() {
     if (!apiData || !apiData.valores) return { labels: [], datasets: [] };
     const labels = apiData.labels || [];
     let keys = Object.keys(apiData.valores);
-    
+
     // Ordena meses se necessário
     if (keys.some(k => ORDEM_MESES.includes(k.toLowerCase().trim()))) {
       keys.sort((a, b) => {
@@ -185,7 +195,25 @@ export default function TelaGraficos() {
 
     const excelColors = ["#3b82f6", "#f97316", "#94a3b8", "#eab308", "#22c55e"];
     const datasets = keys.map((key, index) => ({
-      label: key, 
+      label: key,
+      data: apiData.valores[key],
+      backgroundColor: excelColors[index % excelColors.length],
+      borderColor: excelColors[index % excelColors.length],
+      borderWidth: 1,
+      borderRadius: 4,
+    }));
+
+    return { labels, datasets };
+  };
+
+  // --- 3. Gráficos Legados (Evolução, Top Pendências) ---
+  const buildPendenciasTopChart = (apiData) => {
+    if (!apiData || !apiData.valores) return { labels: [], datasets: [] };
+
+    const labels = apiData.labels || [];
+    const keys = Object.keys(apiData.valores);
+    const datasets = keys.map((key, index) => ({
+      label: key,
       data: apiData.valores[key],
       backgroundColor: excelColors[index % excelColors.length],
       borderColor: excelColors[index % excelColors.length],
@@ -212,15 +240,15 @@ export default function TelaGraficos() {
             <div key={idx} className="bg-slate-800 rounded-lg p-5 shadow-lg border border-slate-700 hover:border-slate-600 transition-colors">
               <h3 className="text-lg font-bold text-center mb-4 text-slate-200">{grafico.titulo}</h3>
               <div className="h-64 relative">
-                <Bar 
+                <Bar
                   data={{
-                    labels: grafico.labels, 
+                    labels: grafico.labels,
                     datasets: [
                       { label: "OK", data: grafico.ok, backgroundColor: "#22c55e", borderRadius: 4 },
                       { label: "NOK", data: grafico.nok, backgroundColor: "#ef4444", borderRadius: 4 }
                     ]
-                  }} 
-                  options={commonOptions} 
+                  }}
+                  options={commonOptions}
                 />
               </div>
             </div>
@@ -233,9 +261,9 @@ export default function TelaGraficos() {
   const commonOptions = {
     maintainAspectRatio: false,
     responsive: true,
-    plugins: { 
-        legend: { labels: { color: "#cbd5e1", usePointStyle: true }, position: 'bottom' },
-        tooltip: { backgroundColor: "#1e293b" }
+    plugins: {
+      legend: { labels: { color: "#cbd5e1", usePointStyle: true }, position: 'bottom' },
+      tooltip: { backgroundColor: "#1e293b" }
     },
     scales: {
       x: { ticks: { color: "#94a3b8" }, grid: { display: false } },
@@ -246,7 +274,7 @@ export default function TelaGraficos() {
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 font-sans">
       <div className="max-w-7xl mx-auto">
-        
+
         {/* HEADER */}
         <div className="flex flex-col md:flex-row items-center justify-between mb-10 gap-4">
           <div className="flex items-center gap-4">
@@ -267,30 +295,82 @@ export default function TelaGraficos() {
         <div className="mb-10">
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl">
             <div className="flex items-center gap-2 mb-6">
-                <Target className="text-purple-500" size={22} />
-                <h2 className="text-lg font-semibold text-slate-200">
-                    Cronograma Mensal: Programado vs Realizado (2026)
-                </h2>
+              <Target className="text-purple-500" size={22} />
+              <h2 className="text-lg font-semibold text-slate-200">
+                Cronograma Mensal: Programado vs Realizado (2026)
+              </h2>
             </div>
             <div className="h-80">
-              <Bar 
-                data={buildComparisonChart(data?.programado_realizado)} 
+              <Bar
+                data={buildComparisonChart(data?.programado_realizado)}
                 options={{
-                    ...commonOptions,
-                    scales: {
-                        ...commonOptions.scales,
-                        x: { ...commonOptions.scales.x, stacked: false },
-                        y: { ...commonOptions.scales.y, stacked: false }
-                    }
-                }} 
+                  ...commonOptions,
+                  scales: {
+                    ...commonOptions.scales,
+                    x: { ...commonOptions.scales.x, stacked: false },
+                    y: { ...commonOptions.scales.y, stacked: false }
+                  }
+                }}
               />
             </div>
           </div>
         </div>
 
+        {/* --- 2. GRÁFICO TIPO DE COLETA POR MÊS --- */}
+        <div className="mb-10">
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl">
+            <div className="flex items-center gap-2 mb-6">
+              <List className="text-blue-400" size={22} />
+              <h2 className="text-lg font-semibold text-slate-200">
+                Tipo de Coleta por Mês (2026)
+              </h2>
+            </div>
+            <div className="h-80">
+              <Bar
+                data={buildTipoColetaChart(data?.tipo_coleta)}
+                options={{
+                  ...commonOptions,
+                  scales: {
+                    ...commonOptions.scales,
+                    x: { ...commonOptions.scales.x, stacked: false },
+                    y: { ...commonOptions.scales.y, stacked: false }
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* --- 3. GRÁFICO NÃO CONFORMIDADE POR GERENTE --- */}
+        {data?.nao_conformidade_gm?.labels?.length > 0 && (
+          <div className="mb-10">
+            <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl">
+              <div className="flex items-center gap-2 mb-6">
+                <UserX className="text-red-400" size={22} />
+                <h2 className="text-lg font-semibold text-slate-200">
+                  Índice de Não Conformidade por Gerente de Mercado (2026)
+                </h2>
+              </div>
+              <div style={{ height: Math.max(300, (data?.nao_conformidade_gm?.labels?.length || 5) * 40) }}>
+                <Bar
+                  data={buildNaoConformidadeChart(data?.nao_conformidade_gm)}
+                  options={{
+                    ...commonOptions,
+                    indexAxis: 'y',
+                    scales: {
+                      x: { ...commonOptions.scales.y, beginAtZero: true, ticks: { ...commonOptions.scales.y.ticks, stepSize: 1 } },
+                      y: { ticks: { color: "#cbd5e1", font: { size: 11 } }, grid: { display: false } }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* --- 2. GRID PRINCIPAL --- */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-4">
-          
+
           {/* Evolução Anual */}
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl col-span-1 lg:col-span-2">
             <h2 className="text-lg font-semibold mb-6 text-slate-200 border-l-4 border-blue-500 pl-3">Evolução Anual de Pendências</h2>
@@ -311,15 +391,15 @@ export default function TelaGraficos() {
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl col-span-1 lg:col-span-2">
             <h2 className="text-lg font-semibold mb-6 text-slate-200 border-l-4 border-blue-500 pl-3">Back Room (Status por Regional)</h2>
             <div className="h-96">
-              <Bar 
-                data={buildStatusChart(data?.backroom)} 
+              <Bar
+                data={buildStatusChart(data?.backroom)}
                 options={{
-                    ...commonOptions,
-                    plugins: {
-                        ...commonOptions.plugins,
-                        legend: { position: 'top', labels: { color: "#cbd5e1" } }
-                    }
-                }} 
+                  ...commonOptions,
+                  plugins: {
+                    ...commonOptions.plugins,
+                    legend: { position: 'top', labels: { color: "#cbd5e1" } }
+                  }
+                }}
               />
             </div>
           </div>
@@ -328,15 +408,15 @@ export default function TelaGraficos() {
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl col-span-1 lg:col-span-2">
             <h2 className="text-lg font-semibold mb-6 text-slate-200 border-l-4 border-blue-500 pl-3">Gelo (Status por Regional)</h2>
             <div className="h-96">
-              <Bar 
-                data={buildStatusChart(data?.gelo)} 
+              <Bar
+                data={buildStatusChart(data?.gelo)}
                 options={{
-                    ...commonOptions,
-                    plugins: {
-                        ...commonOptions.plugins,
-                        legend: { position: 'top', labels: { color: "#cbd5e1" } }
-                    }
-                }} 
+                  ...commonOptions,
+                  plugins: {
+                    ...commonOptions.plugins,
+                    legend: { position: 'top', labels: { color: "#cbd5e1" } }
+                  }
+                }}
               />
             </div>
           </div>
@@ -344,18 +424,18 @@ export default function TelaGraficos() {
           {/* TOP PENDÊNCIAS GELO */}
           <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-xl col-span-1 lg:col-span-2">
             <div className="flex items-center gap-2 mb-6">
-                <AlertTriangle className="text-red-500" size={22} />
-                <h2 className="text-lg font-semibold text-slate-200">
-                    Top Pendências de Gelo (Ocorrências)
-                </h2>
+              <AlertTriangle className="text-red-500" size={22} />
+              <h2 className="text-lg font-semibold text-slate-200">
+                Top Pendências de Gelo (Ocorrências)
+              </h2>
             </div>
             <div className="h-96">
-              <Bar 
-                data={buildLegacyChart(data?.pendencias_gelo)} 
+              <Bar
+                data={buildLegacyChart(data?.pendencias_gelo)}
                 options={{
                   ...commonOptions,
                   indexAxis: 'y', // Barras horizontais
-                }} 
+                }}
               />
             </div>
           </div>

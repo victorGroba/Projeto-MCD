@@ -95,56 +95,82 @@ def processar_status_bloco(df):
     if df is None or df.empty: return {"valores": {}, "labels": []}
     
     header = df.iloc[0]
-    idx_total = -1; idx_ok = -1; idx_nok = -1
+    idx_total = -1; idx_ok = -1; idx_nok = -1; idx_pend = -1
 
     for i, val in enumerate(header):
         texto = str(val).upper()
         if "TOTAL" in texto or "PROGRAMADO" in texto: idx_total = i
         if "CONFORME" in texto or "OK" in texto or "SATISFAT" in texto: idx_ok = i
         if "IRREGULAR" in texto or "NOK" in texto or "INSATISFAT" in texto: idx_nok = i
+        if "PENDENTE" in texto: idx_pend = i
 
     if idx_total == -1: idx_total = 1
-    if idx_ok == -1: idx_ok = df.shape[1] - 2
-    if idx_nok == -1: idx_nok = df.shape[1] - 1
+    if idx_ok == -1: idx_ok = df.shape[1] - 3
+    if idx_nok == -1: idx_nok = df.shape[1] - 4
+    if idx_pend == -1: idx_pend = df.shape[1] - 1
 
     df_dados = df.iloc[1:]
-    labels = []; lista_total = []; lista_ok = []; lista_nok = []
+    labels = []; lista_total = []; lista_ok = []; lista_nok = []; lista_pend = []
 
     for i, row in df_dados.iterrows():
         sigla = str(row.iloc[0]).strip()
         if "TOTAL" in sigla.upper(): continue
         try:
-            vt = int(pd.to_numeric(row.iloc[idx_total], errors='coerce') or 0)
-            vo = int(pd.to_numeric(row.iloc[idx_ok], errors='coerce') or 0)
-            vn = int(pd.to_numeric(row.iloc[idx_nok], errors='coerce') or 0)
-            labels.append(sigla); lista_total.append(vt); lista_ok.append(vo); lista_nok.append(vn)
+            vt = int(pd.to_numeric(row.iloc[idx_total], errors='coerce') or 0) if idx_total != -1 else 0
+            vo = int(pd.to_numeric(row.iloc[idx_ok], errors='coerce') or 0) if idx_ok != -1 else 0
+            vn = int(pd.to_numeric(row.iloc[idx_nok], errors='coerce') or 0) if idx_nok != -1 else 0
+            vp = int(pd.to_numeric(row.iloc[idx_pend], errors='coerce') or 0) if idx_pend != -1 else 0
+            
+            labels.append(sigla)
+            lista_total.append(vt)
+            lista_ok.append(vo)
+            lista_nok.append(vn)
+            lista_pend.append(vp)
         except: continue
 
-    return {"labels": labels, "valores": {"Total": lista_total, "OK": lista_ok, "NOK": lista_nok}}
+    return {"labels": labels, "valores": {"Total": lista_total, "OK": lista_ok, "NOK": lista_nok, "Pendentes": lista_pend}}
 
-# --- PROCESSADOR DE PENDÊNCIAS TOP ---
+# --- PROCESSADOR DE PENDÊNCIAS DE GELO (MATRIZ) ---
 def processar_pendencias_top(df):
     if df is None or df.empty: return {"valores": {}, "labels": []}
-    labels = []; vals = []
-    # Pula cabeçalho (Linha 0)
+
+    # Linha 0 = cabeçalho: ['Sigla', 'Máquina de Gelo', 'Bin da torre', 'Bin Mc Café']
+    header = [str(x).strip() for x in df.iloc[0]]
+    print(f"🔍 [DEBUG PEND GELO] Header: {header}")
+
+    # Descobre as colunas de dados (tudo que não é "Sigla" ou vazio/nan)
+    categorias = []
+    col_indices = []
+    for i, nome in enumerate(header):
+        if nome and nome.lower() not in ["sigla", "nan", "", "none"]:
+            categorias.append(nome)
+            col_indices.append(i)
+
+    print(f"🔍 [DEBUG PEND GELO] Categorias: {categorias}, Indices: {col_indices}")
+
+    # Linhas de dados (pula o cabeçalho)
     df_dados = df.iloc[1:]
-    for i, row in df_dados.iterrows():
-        try:
-            lbl = str(row.iloc[0]).strip()
-            val = 0
-            # Procura valor da direita pra esquerda
-            for col_idx in range(len(row)-1, 0, -1):
-                try: 
-                    v = float(row.iloc[col_idx])
-                    if not np.isnan(v): val = int(v); break
-                except: continue
-            
-            # Filtros
-            titulos = ["pendência", "quantidade", "qtd", "descrição"]
-            if val > 0 and "total" not in lbl.lower() and lbl.lower() not in titulos:
-                labels.append(lbl); vals.append(val)
-        except: continue
-    return {"labels": labels, "valores": {"Ocorrências": vals}}
+    labels_regionais = []
+    valores_por_categoria = {cat: [] for cat in categorias}
+
+    for _, row in df_dados.iterrows():
+        sigla = str(row.iloc[0]).strip()
+        if not sigla or sigla.lower() in ["nan", "none", ""]:
+            continue
+        labels_regionais.append(sigla)
+        for cat, idx in zip(categorias, col_indices):
+            try:
+                val = pd.to_numeric(row.iloc[idx], errors='coerce')
+                val = 0 if pd.isna(val) else int(val)
+            except:
+                val = 0
+            valores_por_categoria[cat].append(val)
+
+    print(f"🔍 [DEBUG PEND GELO] Regionais: {labels_regionais}")
+    for cat in categorias:
+        print(f"   {cat}: {valores_por_categoria[cat]}")
+
+    return {"labels": labels_regionais, "valores": valores_por_categoria}
 
 # --- DETALHES GERAIS (Mantido) ---
 def processar_detalhes_parametros_por_mes(df):
@@ -153,7 +179,21 @@ def processar_detalhes_parametros_por_mes(df):
     ORDEM_MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
     try:
         if df.shape[1] <= IDX_MES: return {}
-        col_mes = df.iloc[:, IDX_MES].astype(str).str.strip()
+        
+        # Filtra apenas 2026 pela coluna de data (coluna index ~4, procura coluna com 'data')
+        col_data_idx = None
+        for i, col_name in enumerate(df.columns):
+            if 'data' in str(col_name).lower():
+                col_data_idx = i
+                break
+        
+        if col_data_idx is not None:
+            df_work = df.copy()
+            df_work.iloc[:, col_data_idx] = pd.to_datetime(df_work.iloc[:, col_data_idx], errors='coerce')
+            mask_2026 = df_work.iloc[:, col_data_idx].dt.year == 2026
+            df = df[mask_2026]
+        
+        col_mes = df.iloc[:, IDX_MES].astype(str).str.strip().str.lower().str.capitalize()
         resultado_grupos = {}
         for nome_grupo, fatiador in regras_grupos.items():
             df_grupo = df.iloc[:, fatiador].copy()
