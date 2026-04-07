@@ -9,7 +9,9 @@ from mcdagua.services.excel_processor import (
     processar_regional_ok_nok,     # RENOMEADA para clareza
     processar_status_bloco, 
     processar_pendencias_top,
-    processar_aba_geral
+    processar_aba_geral,
+    processar_backroom_mensal,       # Back Room OK/NOK mensal
+    processar_backroom_por_regional  # NOVO: Back Room por Regional
 )
 from mcdagua.services.kpis import (
     get_programado_realizado, 
@@ -67,6 +69,21 @@ def graficos_data():
         response_data["programado_realizado"] = get_programado_realizado(df_geral)
         response_data["tipo_coleta"] = get_tipo_coleta_por_mes(df_geral)
         response_data["nao_conformidade_gm"] = get_nao_conformidade_por_gerente(df_geral)
+        
+        # NOVO: Back Room conformidade mensal (coluna I)
+        try:
+            response_data["backroom_mensal"] = processar_backroom_mensal(path)
+        except Exception as e:
+            print(f"⚠️ [BACKROOM MENSAL] Erro: {e}")
+            response_data["backroom_mensal"] = {"labels": [], "ok": [], "nok": [], "ok_pct": [], "nok_pct": []}
+        
+        # NOVO: Back Room conformidade por Regional
+        try:
+            response_data["backroom_regional"] = processar_backroom_por_regional(path)
+        except Exception as e:
+            print(f"⚠️ [BACKROOM REGIONAL] Erro: {e}")
+            response_data["backroom_regional"] = {"meses": [], "regionais": [], "dados": {}}
+        
         try:
             dados_geral, _ = processar_aba_geral(path)
             if dados_geral and "detalhes_parametros" in dados_geral:

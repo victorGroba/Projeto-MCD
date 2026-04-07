@@ -252,6 +252,261 @@ def processar_detalhes_parametros_por_mes(df):
         return resultado_grupos
     except: return {}
 
+def processar_backroom_mensal(caminho_arquivo):
+    """
+    Lê a coluna I (Back Room) da aba GERAL e agrupa por mês (coluna D).
+    - OK (case-insensitive): conforme
+    - NA (case-insensitive): desconsiderar (excluir da contagem)
+    - Qualquer outro valor: NOK (não conforme)
+    Retorna: { labels: [meses], ok: [qtd], nok: [qtd], ok_pct: [%], nok_pct: [%] }
+    """
+    ORDEM_MESES = [
+        "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+    ]
+    
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(caminho_arquivo, read_only=True, data_only=True)
+        ws = wb['GERAL']
+        
+        # Coletar dados: mês, data, backroom
+        registros = []
+        for row in ws.iter_rows(min_row=3, min_col=1, max_col=9):
+            mes_val = row[3].value   # Col D - Mês
+            data_val = row[4].value  # Col E - Data (para filtrar ano)
+            br_val = row[8].value    # Col I - Back Room
+            
+            if br_val is None or mes_val is None:
+                continue
+            
+            br_str = str(br_val).strip().lower()
+            mes_str = str(mes_val).strip().lower()
+            
+            # Ignorar NA
+            if br_str == 'na':
+                continue
+            
+            # Filtrar somente 2026
+            ano = None
+            if data_val is not None:
+                try:
+                    if hasattr(data_val, 'year'):
+                        ano = data_val.year
+                    else:
+                        from datetime import datetime
+                        dt = pd.to_datetime(data_val, errors='coerce')
+                        if pd.notna(dt):
+                            ano = dt.year
+                except:
+                    pass
+            
+            if ano is not None and ano != 2026:
+                continue
+            
+            # Classificar OK/NOK
+            is_ok = br_str == 'ok'
+            registros.append({'mes': mes_str, 'is_ok': is_ok})
+        
+        wb.close()
+        
+        if not registros:
+            return {"labels": [], "ok": [], "nok": [], "ok_pct": [], "nok_pct": []}
+        
+        # Agrupar por mês
+        from collections import defaultdict
+        agrupado = defaultdict(lambda: {'ok': 0, 'nok': 0})
+        
+        for reg in registros:
+            mes = reg['mes']
+            if reg['is_ok']:
+                agrupado[mes]['ok'] += 1
+            else:
+                agrupado[mes]['nok'] += 1
+        
+        # Ordenar meses cronologicamente
+        meses_presentes = list(agrupado.keys())
+        meses_ordenados = sorted(meses_presentes, key=lambda x: ORDEM_MESES.index(x) if x in ORDEM_MESES else 999)
+        
+        labels = []
+        ok_vals = []
+        nok_vals = []
+        ok_pcts = []
+        nok_pcts = []
+        
+        for mes in meses_ordenados:
+            dados = agrupado[mes]
+            total = dados['ok'] + dados['nok']
+            labels.append(mes.capitalize())
+            ok_vals.append(dados['ok'])
+            nok_vals.append(dados['nok'])
+            ok_pcts.append(round((dados['ok'] / total) * 100, 1) if total > 0 else 0)
+            nok_pcts.append(round((dados['nok'] / total) * 100, 1) if total > 0 else 0)
+        
+        print(f"✅ [BACKROOM MENSAL] {len(registros)} registros, {len(labels)} meses")
+        for i, m in enumerate(labels):
+            print(f"   {m}: OK={ok_vals[i]} ({ok_pcts[i]}%) | NOK={nok_vals[i]} ({nok_pcts[i]}%)")
+        
+        return {
+            "labels": labels,
+            "ok": ok_vals,
+            "nok": nok_vals,
+            "ok_pct": ok_pcts,
+            "nok_pct": nok_pcts
+        }
+    
+    except Exception as e:
+        print(f"❌ [BACKROOM MENSAL] Erro: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"labels": [], "ok": [], "nok": [], "ok_pct": [], "nok_pct": []}
+
+
+def processar_backroom_por_regional(caminho_arquivo):
+    """
+    Lê a coluna I (Back Room) da aba GERAL e agrupa por Regional (dinâmico) e Mês (coluna D).
+    Retorna: { 
+        meses: ["Janeiro", ...], 
+        regionais: ["RSOU", "BRA", "SAO1", "SAO2"],
+        dados: {
+            "Janeiro": { "RSOU": {ok: N, nok: N, ok_pct: N, nok_pct: N}, ... },
+            ...
+        }
+    }
+    """
+    ORDEM_MESES = [
+        "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+    ]
+    
+    try:
+        import openpyxl
+        from collections import defaultdict
+        
+        wb = openpyxl.load_workbook(caminho_arquivo, read_only=True, data_only=True)
+        ws = wb['GERAL']
+        
+        # Descobrir qual coluna é "Regional" lendo a linha de cabeçalho (linha 2)
+        header_row = None
+        for row in ws.iter_rows(min_row=2, max_row=2, min_col=1, max_col=20):
+            header_row = row
+            break
+        
+        regional_col_idx = None
+        if header_row:
+            for i, cell in enumerate(header_row):
+                val = str(cell.value or '').strip().lower()
+                if 'regional' in val or 'regiao' in val:
+                    regional_col_idx = i
+                    break
+        
+        if regional_col_idx is None:
+            # Fallback: tentar coluna B (índice 1)
+            regional_col_idx = 1
+            print(f"⚠️ [BACKROOM REGIONAL] Coluna 'Regional' não encontrada no header, usando coluna B (idx={regional_col_idx})")
+        else:
+            print(f"✅ [BACKROOM REGIONAL] Coluna 'Regional' encontrada no índice {regional_col_idx}")
+        
+        # Coletar dados: regional, mês, data, backroom
+        registros = []
+        max_col_needed = max(regional_col_idx, 8) + 1  # Pelo menos até coluna I (idx 8)
+        
+        for row in ws.iter_rows(min_row=3, min_col=1, max_col=max_col_needed + 1):
+            if len(row) <= max(regional_col_idx, 8):
+                continue
+                
+            regional_val = row[regional_col_idx].value
+            mes_val = row[3].value      # Col D - Mês
+            data_val = row[4].value     # Col E - Data
+            br_val = row[8].value       # Col I - Back Room
+            
+            if br_val is None or mes_val is None or regional_val is None:
+                continue
+            
+            br_str = str(br_val).strip().lower()
+            mes_str = str(mes_val).strip().lower()
+            regional_str = str(regional_val).strip().upper()
+            
+            # Ignorar NA e vazios
+            if br_str == 'na' or not regional_str or regional_str in ['NAN', 'NONE', '']:
+                continue
+            
+            # Filtrar somente 2026
+            ano = None
+            if data_val is not None:
+                try:
+                    if hasattr(data_val, 'year'):
+                        ano = data_val.year
+                    else:
+                        dt = pd.to_datetime(data_val, errors='coerce')
+                        if pd.notna(dt):
+                            ano = dt.year
+                except:
+                    pass
+            
+            if ano is not None and ano != 2026:
+                continue
+            
+            is_ok = br_str == 'ok'
+            registros.append({
+                'regional': regional_str, 
+                'mes': mes_str, 
+                'is_ok': is_ok
+            })
+        
+        wb.close()
+        
+        if not registros:
+            return {"meses": [], "regionais": [], "dados": {}}
+        
+        # Agrupar por mês e regional
+        agrupado = defaultdict(lambda: defaultdict(lambda: {'ok': 0, 'nok': 0}))
+        todas_regionais = set()
+        
+        for reg in registros:
+            agrupado[reg['mes']][reg['regional']]['ok' if reg['is_ok'] else 'nok'] += 1
+            todas_regionais.add(reg['regional'])
+        
+        # Ordenar meses e regionais
+        meses_presentes = list(agrupado.keys())
+        meses_ordenados = sorted(meses_presentes, key=lambda x: ORDEM_MESES.index(x) if x in ORDEM_MESES else 999)
+        regionais_ordenadas = sorted(list(todas_regionais))
+        
+        # Construir resposta
+        dados = {}
+        for mes in meses_ordenados:
+            mes_cap = mes.capitalize()
+            dados[mes_cap] = {}
+            for regional in regionais_ordenadas:
+                info = agrupado[mes][regional]
+                total = info['ok'] + info['nok']
+                dados[mes_cap][regional] = {
+                    'ok': info['ok'],
+                    'nok': info['nok'],
+                    'ok_pct': round((info['ok'] / total) * 100, 1) if total > 0 else 0,
+                    'nok_pct': round((info['nok'] / total) * 100, 1) if total > 0 else 0,
+                }
+        
+        print(f"✅ [BACKROOM REGIONAL] {len(registros)} registros, {len(meses_ordenados)} meses, {len(regionais_ordenadas)} regionais")
+        for mes in meses_ordenados:
+            mes_cap = mes.capitalize()
+            for reg in regionais_ordenadas:
+                d = dados[mes_cap][reg]
+                print(f"   {mes_cap}/{reg}: OK={d['ok']} ({d['ok_pct']}%) | NOK={d['nok']} ({d['nok_pct']}%)")
+        
+        return {
+            "meses": [m.capitalize() for m in meses_ordenados],
+            "regionais": regionais_ordenadas,
+            "dados": dados
+        }
+    
+    except Exception as e:
+        print(f"❌ [BACKROOM REGIONAL] Erro: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"meses": [], "regionais": [], "dados": {}}
+
+
 def processar_aba_geral(caminho_arquivo):
     try:
         try: df_header = pd.read_excel(caminho_arquivo, sheet_name='GERAL', header=1)
