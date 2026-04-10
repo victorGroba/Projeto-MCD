@@ -155,7 +155,8 @@ export default function TelaGraficos() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState(""); // Filtro mês para regional
+  const [selectedMonth, setSelectedMonth] = useState(""); // Filtro mês para regional backroom
+  const [selectedMonthGelo, setSelectedMonthGelo] = useState(""); // Filtro mês para regional gelo pool
 
   const fetchData = () => {
     setLoading(true);
@@ -165,6 +166,9 @@ export default function TelaGraficos() {
         // Define mês padrão como o primeiro mês disponível
         if (res.data?.backroom_regional?.meses?.length > 0 && !selectedMonth) {
           setSelectedMonth(res.data.backroom_regional.meses[0]);
+        }
+        if (res.data?.gelopool_regional?.meses?.length > 0 && !selectedMonthGelo) {
+          setSelectedMonthGelo(res.data.gelopool_regional.meses[0]);
         }
       })
       .catch((err) => console.error("Erro ao carregar gráficos:", err))
@@ -608,6 +612,220 @@ export default function TelaGraficos() {
     }
   };
 
+  // ====================================================================
+  // GRÁFICO GELO POOL CONFORMIDADE MENSAL - STACKED
+  // ====================================================================
+  const buildStackedGeloMensalData = () => {
+    if (!data?.gelopool_mensal?.labels?.length) return null;
+    const { labels, ok, nok } = data.gelopool_mensal;
+    return {
+      labels,
+      datasets: [
+        {
+          label: "OK (Conforme)",
+          data: ok,
+          backgroundColor: "#22c55e",
+          borderColor: "#16a34a",
+          borderWidth: 1,
+          barPercentage: 0.65,
+          categoryPercentage: 0.8,
+        },
+        {
+          label: "NOK (Não Conforme)",
+          data: nok,
+          backgroundColor: "#ef4444",
+          borderColor: "#dc2626",
+          borderWidth: 1,
+          barPercentage: 0.65,
+          categoryPercentage: 0.8,
+        }
+      ]
+    };
+  };
+
+  const stackedGeloMensalOptions = {
+    maintainAspectRatio: false,
+    responsive: true,
+    _isStackedConformidade: true,
+    layout: { padding: { top: 30 } },
+    scales: {
+      x: {
+        stacked: true,
+        ticks: { color: "#94a3b8", font: { size: 11 } },
+        grid: { display: false }
+      },
+      y: {
+        stacked: true,
+        ticks: {
+          color: "#94a3b8",
+          beginAtZero: true,
+          callback: (v) => Number.isInteger(v) ? v : null
+        },
+        grid: { color: "#334155" },
+        beginAtZero: true
+      }
+    },
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          color: "#cbd5e1",
+          usePointStyle: true,
+          font: { size: 12, weight: 'bold' },
+          padding: 20
+        }
+      },
+      tooltip: {
+        backgroundColor: "#1e293b",
+        titleColor: "#f1f5f9",
+        bodyColor: "#cbd5e1",
+        padding: 12,
+        borderColor: "#334155",
+        borderWidth: 1,
+        callbacks: {
+          label: function (context) {
+            const idx = context.dataIndex;
+            const value = context.raw;
+            const okVal = data.gelopool_mensal.ok[idx] || 0;
+            const nokVal = data.gelopool_mensal.nok[idx] || 0;
+            const total = okVal + nokVal;
+            const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0';
+            return `${context.dataset.label}: ${value} de ${total} (${pct}%)`;
+          }
+        }
+      },
+      datalabels: {
+        display: true,
+        color: '#ffffff',
+        font: { weight: 'bold', size: 11 },
+        anchor: 'center',
+        align: 'center',
+        formatter: (value, context) => {
+          if (!value || value === 0) return '';
+          const idx = context.dataIndex;
+          const okVal = data.gelopool_mensal.ok[idx] || 0;
+          const nokVal = data.gelopool_mensal.nok[idx] || 0;
+          const total = okVal + nokVal;
+          if (total === 0) return '';
+          const pct = ((value / total) * 100).toFixed(1).replace('.', ',');
+          return `${pct}%`;
+        }
+      }
+    }
+  };
+
+  // ====================================================================
+  // GRÁFICO GELO POOL CONFORMIDADE POR REGIONAL - STACKED com filtro mês
+  // ====================================================================
+  const buildGeloRegionalData = () => {
+    if (!data?.gelopool_regional?.regionais?.length || !selectedMonthGelo) return null;
+    const { regionais, dados } = data.gelopool_regional;
+    const mesData = dados[selectedMonthGelo];
+    if (!mesData) return null;
+
+    const okValues = regionais.map(r => mesData[r]?.ok || 0);
+    const nokValues = regionais.map(r => mesData[r]?.nok || 0);
+
+    return {
+      labels: regionais,
+      datasets: [
+        {
+          label: "OK (Conforme)",
+          data: okValues,
+          backgroundColor: "#22c55e",
+          borderColor: "#16a34a",
+          borderWidth: 1,
+          barPercentage: 0.6,
+          categoryPercentage: 0.7,
+        },
+        {
+          label: "NOK (Não Conforme)",
+          data: nokValues,
+          backgroundColor: "#ef4444",
+          borderColor: "#dc2626",
+          borderWidth: 1,
+          barPercentage: 0.6,
+          categoryPercentage: 0.7,
+        }
+      ]
+    };
+  };
+
+  const stackedGeloRegionalOptions = {
+    maintainAspectRatio: false,
+    responsive: true,
+    _isStackedConformidade: true,
+    layout: { padding: { top: 30 } },
+    scales: {
+      x: {
+        stacked: true,
+        ticks: { color: "#cbd5e1", font: { size: 13, weight: 'bold' } },
+        grid: { display: false }
+      },
+      y: {
+        stacked: true,
+        ticks: {
+          color: "#94a3b8",
+          beginAtZero: true,
+          callback: (v) => Number.isInteger(v) ? v : null
+        },
+        grid: { color: "#334155" },
+        beginAtZero: true
+      }
+    },
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          color: "#cbd5e1",
+          usePointStyle: true,
+          font: { size: 12, weight: 'bold' },
+          padding: 20
+        }
+      },
+      tooltip: {
+        backgroundColor: "#1e293b",
+        titleColor: "#f1f5f9",
+        bodyColor: "#cbd5e1",
+        padding: 12,
+        borderColor: "#334155",
+        borderWidth: 1,
+        callbacks: {
+          label: function (context) {
+            if (!selectedMonthGelo || !data?.gelopool_regional?.dados) return '';
+            const regional = data.gelopool_regional.regionais[context.dataIndex];
+            const mesData = data.gelopool_regional.dados[selectedMonthGelo];
+            if (!mesData || !mesData[regional]) return '';
+            const info = mesData[regional];
+            const total = info.ok + info.nok;
+            const value = context.raw;
+            const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0';
+            return `${context.dataset.label}: ${value} de ${total} (${pct}%)`;
+          }
+        }
+      },
+      datalabels: {
+        display: true,
+        color: '#ffffff',
+        font: { weight: 'bold', size: 12 },
+        anchor: 'center',
+        align: 'center',
+        formatter: (value, context) => {
+          if (!value || value === 0) return '';
+          if (!selectedMonthGelo || !data?.gelopool_regional?.dados) return '';
+          const regional = data.gelopool_regional.regionais[context.dataIndex];
+          const mesData = data.gelopool_regional.dados[selectedMonthGelo];
+          if (!mesData || !mesData[regional]) return '';
+          const info = mesData[regional];
+          const total = info.ok + info.nok;
+          if (total === 0) return '';
+          const pct = ((value / total) * 100).toFixed(1).replace('.', ',');
+          return `${pct}%`;
+        }
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 font-sans">
       <div className="max-w-7xl mx-auto">
@@ -754,6 +972,123 @@ export default function TelaGraficos() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
                   {data.backroom_regional.regionais.map((reg) => {
                     const mesData = data.backroom_regional.dados[selectedMonth];
+                    if (!mesData || !mesData[reg]) return null;
+                    const info = mesData[reg];
+                    const total = info.ok + info.nok;
+                    const pctOk = total > 0 ? info.ok_pct : 0;
+                    return (
+                      <div key={reg} className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/50 text-center">
+                        <p className="text-sm font-bold text-slate-200 mb-1">{reg}</p>
+                        <div className="flex items-center justify-center gap-3 text-xs">
+                          <span className="text-green-400 font-bold">{info.ok} OK</span>
+                          <span className="text-slate-600">|</span>
+                          <span className="text-red-400 font-bold">{info.nok} NOK</span>
+                        </div>
+                        <div className="mt-1.5 w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${pctOk}%`,
+                              background: `linear-gradient(90deg, #22c55e, #4ade80)`
+                            }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1">{pctOk}% conforme</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </CollapsibleSection>
+        )}
+
+        {/* --- GELO POOL CONFORMIDADE MENSAL (STACKED) --- */}
+        {data?.gelopool_mensal?.labels?.length > 0 && (
+          <CollapsibleSection
+            title="Gelo Pool — Conformidade Mensal (2026)"
+            icon={<BarChart2 className="text-cyan-400" size={22} />}
+            badge='Valores "NA" excluídos do cálculo'
+          >
+            <div className="h-96 mt-4">
+              <Bar
+                data={buildStackedGeloMensalData()}
+                options={stackedGeloMensalOptions}
+              />
+            </div>
+            {/* Resumo em cards abaixo do gráfico */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+              {data.gelopool_mensal.labels.map((mes, i) => {
+                const ok = data.gelopool_mensal.ok[i];
+                const nok = data.gelopool_mensal.nok[i];
+                const total = ok + nok;
+                const pctOk = total > 0 ? ((ok / total) * 100).toFixed(1) : '0';
+                return (
+                  <div key={mes} className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/50 text-center">
+                    <p className="text-sm font-semibold text-slate-300 mb-1">{mes}</p>
+                    <div className="flex items-center justify-center gap-3 text-xs">
+                      <span className="text-green-400 font-bold">{ok} OK</span>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-red-400 font-bold">{nok} NOK</span>
+                    </div>
+                    <div className="mt-1.5 w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${pctOk}%`,
+                          background: `linear-gradient(90deg, #22c55e, #4ade80)`
+                        }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">{pctOk}% conforme</p>
+                  </div>
+                );
+              })}
+            </div>
+          </CollapsibleSection>
+        )}
+
+        {/* --- GELO POOL CONFORMIDADE POR REGIONAL (STACKED + Filtro mês) --- */}
+        {data?.gelopool_regional?.regionais?.length > 0 && (
+          <CollapsibleSection
+            title="Gelo Pool — Conformidade por Regional (2026)"
+            icon={<BarChart2 className="text-teal-400" size={22} />}
+            badge="Filtro por mês"
+          >
+            {/* Filtro de mês */}
+            <div className="flex items-center gap-3 mt-4 mb-6">
+              <Filter className="text-slate-400" size={18} />
+              <span className="text-sm text-slate-400 font-medium">Mês:</span>
+              <div className="flex flex-wrap gap-2">
+                {data.gelopool_regional.meses.map(mes => (
+                  <button
+                    key={mes}
+                    onClick={() => setSelectedMonthGelo(mes)}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 border ${
+                      selectedMonthGelo === mes
+                        ? "bg-teal-600 border-teal-500 text-white shadow-lg shadow-teal-500/20"
+                        : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                    }`}
+                  >
+                    {mes}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Gráfico Regional Gelo Pool */}
+            {selectedMonthGelo && buildGeloRegionalData() && (
+              <>
+                <div className="h-96">
+                  <Bar
+                    data={buildGeloRegionalData()}
+                    options={stackedGeloRegionalOptions}
+                  />
+                </div>
+                {/* Cards por regional */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                  {data.gelopool_regional.regionais.map((reg) => {
+                    const mesData = data.gelopool_regional.dados[selectedMonthGelo];
                     if (!mesData || !mesData[reg]) return null;
                     const info = mesData[reg];
                     const total = info.ok + info.nok;

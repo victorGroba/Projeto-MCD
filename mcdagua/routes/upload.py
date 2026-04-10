@@ -123,16 +123,30 @@ def download_file(tipo_arquivo):
     print(f"🔍 [DOWNLOAD] Tentando baixar: {tipo_arquivo}")
     print(f"📂 [DOWNLOAD] Caminho configurado: {path}")
 
-    if not path or not os.path.exists(path):
-        return jsonify({"msg": "Arquivo não encontrado no servidor. Faça um upload primeiro."}), 404
+    if not path:
+        return jsonify({"msg": "Caminho nao configurado para este tipo de arquivo."}), 404
+
+    abs_path = os.path.abspath(path)
+    
+    print(f"[DOWNLOAD] Caminho absoluto: {abs_path}")
+    print(f"[DOWNLOAD] Arquivo existe: {os.path.exists(abs_path)}")
+    if os.path.exists(abs_path):
+        print(f"[DOWNLOAD] Tamanho: {os.path.getsize(abs_path)} bytes")
+
+    if not os.path.exists(abs_path):
+        return jsonify({"msg": f"Arquivo nao encontrado no servidor (path={abs_path}). Faca um upload primeiro."}), 404
 
     try:
         return send_file(
-            path,
+            abs_path,
             as_attachment=True,
             download_name=mapa_nomes[tipo_arquivo],
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            conditional=False,
+            max_age=0
         )
     except Exception as e:
-        print(f"❌ Erro no download: {e}")
-        return jsonify({"msg": "Erro ao baixar arquivo."}), 500
+        import traceback
+        traceback.print_exc()
+        print(f"[DOWNLOAD] Erro ao enviar arquivo: {e}")
+        return jsonify({"msg": f"Erro ao baixar arquivo: {str(e)}"}), 500

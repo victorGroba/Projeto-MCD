@@ -11,7 +11,9 @@ from mcdagua.services.excel_processor import (
     processar_pendencias_top,
     processar_aba_geral,
     processar_backroom_mensal,       # Back Room OK/NOK mensal
-    processar_backroom_por_regional  # NOVO: Back Room por Regional
+    processar_backroom_por_regional, # Back Room por Regional
+    processar_gelopool_mensal,       # Gelo Pool OK/NOK mensal
+    processar_gelopool_por_regional  # Gelo Pool por Regional
 )
 from mcdagua.services.kpis import (
     get_programado_realizado, 
@@ -83,6 +85,20 @@ def graficos_data():
         except Exception as e:
             print(f"⚠️ [BACKROOM REGIONAL] Erro: {e}")
             response_data["backroom_regional"] = {"meses": [], "regionais": [], "dados": {}}
+        
+        # NOVO: Gelo Pool conformidade mensal (coluna S)
+        try:
+            response_data["gelopool_mensal"] = processar_gelopool_mensal(path)
+        except Exception as e:
+            print(f"⚠️ [GELO POOL MENSAL] Erro: {e}")
+            response_data["gelopool_mensal"] = {"labels": [], "ok": [], "nok": [], "ok_pct": [], "nok_pct": []}
+        
+        # NOVO: Gelo Pool conformidade por Regional
+        try:
+            response_data["gelopool_regional"] = processar_gelopool_por_regional(path)
+        except Exception as e:
+            print(f"⚠️ [GELO POOL REGIONAL] Erro: {e}")
+            response_data["gelopool_regional"] = {"meses": [], "regionais": [], "dados": {}}
         
         try:
             dados_geral, _ = processar_aba_geral(path)

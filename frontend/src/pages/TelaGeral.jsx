@@ -403,6 +403,17 @@ export default function TelaGeral() {
   const handleDownloadExcel = async () => {
     try {
       const response = await api.get("/download/geral", { responseType: "blob" });
+      
+      // Verifica se a resposta é realmente um arquivo ou um JSON de erro
+      const contentType = response.headers["content-type"] || "";
+      if (contentType.includes("application/json")) {
+        // Backend retornou erro JSON em vez do arquivo
+        const text = await response.data.text();
+        const errorData = JSON.parse(text);
+        alert(errorData.msg || "Erro ao baixar planilha.");
+        return;
+      }
+      
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
@@ -410,7 +421,20 @@ export default function TelaGeral() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (e) { alert("Erro ao baixar planilha."); }
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      // Tenta extrair mensagem de erro do backend
+      let msg = "Erro ao baixar planilha.";
+      if (e.response?.data) {
+        try {
+          const text = await e.response.data.text();
+          const errorData = JSON.parse(text);
+          msg = errorData.msg || msg;
+        } catch {}
+      }
+      console.error("Download error:", e);
+      alert(msg);
+    }
   };
 
   return (
