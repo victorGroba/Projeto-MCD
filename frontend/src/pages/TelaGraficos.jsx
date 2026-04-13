@@ -886,6 +886,26 @@ export default function TelaGraficos() {
           </div>
         </CollapsibleSection>
 
+        {/* --- 3. EVOLUÇÃO ANUAL DE PENDÊNCIAS --- */}
+        <CollapsibleSection
+          title="Evolução Anual de Pendências"
+          icon={<BarChart2 className="text-blue-400" size={22} />}
+        >
+          <div className="h-80 mt-4">
+            <Line data={buildLegacyChart(data?.restaurante_anual)} options={commonOptions} />
+          </div>
+        </CollapsibleSection>
+
+        {/* --- 4. PENDÊNCIAS POR REGIONAL --- */}
+        <CollapsibleSection
+          title="Pendências por Regional"
+          icon={<BarChart2 className="text-blue-400" size={22} />}
+        >
+          <div className="h-96 mt-4">
+            <Bar data={buildLegacyChart(data?.restaurante_regional)} options={commonOptions} />
+          </div>
+        </CollapsibleSection>
+
         {/* --- CONFORMIDADE MENSAL (STACKED - Padrão da foto) --- */}
         {data?.backroom_mensal?.labels?.length > 0 && (
           <CollapsibleSection
@@ -1120,7 +1140,7 @@ export default function TelaGraficos() {
           </CollapsibleSection>
         )}
 
-        {/* --- 3. GRÁFICO NÃO CONFORMIDADE POR GERENTE --- */}
+        {/* --- GRÁFICO NÃO CONFORMIDADE POR GERENTE --- */}
         {data?.nao_conformidade_gm?.labels?.length > 0 && (
           <CollapsibleSection
             title="Índice de Não Conformidade por Gerente de Mercado (2026)"
@@ -1141,28 +1161,6 @@ export default function TelaGraficos() {
             </div>
           </CollapsibleSection>
         )}
-
-        {/* --- GRID PRINCIPAL --- */}
-
-        {/* Evolução Anual */}
-        <CollapsibleSection
-          title="Evolução Anual de Pendências"
-          icon={<BarChart2 className="text-blue-400" size={22} />}
-        >
-          <div className="h-80 mt-4">
-            <Line data={buildLegacyChart(data?.restaurante_anual)} options={commonOptions} />
-          </div>
-        </CollapsibleSection>
-
-        {/* Pendências Regionais */}
-        <CollapsibleSection
-          title="Pendências por Regional"
-          icon={<BarChart2 className="text-blue-400" size={22} />}
-        >
-          <div className="h-96 mt-4">
-            <Bar data={buildLegacyChart(data?.restaurante_regional)} options={commonOptions} />
-          </div>
-        </CollapsibleSection>
 
         {/* BACK ROOM (STATUS POR REGIONAL) */}
         <CollapsibleSection
@@ -1189,6 +1187,28 @@ export default function TelaGraficos() {
             />
           </div>
         </CollapsibleSection>
+
+        {/* PENDÊNCIAS DE GELO (Máquina de Gelo, Bin da torre, Bin Mc Café) */}
+        {data?.pendencias_gelo?.labels?.length > 0 && (
+          <CollapsibleSection
+            title="Pendências de Gelo por Regional"
+            icon={<AlertTriangle className="text-yellow-400" size={22} />}
+          >
+            <div className="h-96 mt-4">
+              <Bar
+                data={buildPendenciasTopChart(data?.pendencias_gelo)}
+                options={{
+                  ...commonOptions,
+                  scales: {
+                    ...commonOptions.scales,
+                    x: { ...commonOptions.scales.x, stacked: false },
+                    y: { ...commonOptions.scales.y, stacked: false, ticks: { ...commonOptions.scales.y.ticks, stepSize: 1 } }
+                  }
+                }}
+              />
+            </div>
+          </CollapsibleSection>
+        )}
 
 
 

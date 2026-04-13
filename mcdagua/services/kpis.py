@@ -216,29 +216,42 @@ def get_tipo_coleta_por_mes(df):
 
 def get_nao_conformidade_por_gerente(df):
     """
-    Gráfico 3: Índice de Não Conformidade por Gerente de Mercado.
-    Filtra linhas onde pendência NÃO é vazia/ok/na,
-    agrupa por coluna 'gm' (Gerente de Mercado) e conta ocorrências.
+    Gráfico 3: Índice de Não Conformidade por Gerente de Mercado (2026).
+    Lógica idêntica ao filtro manual da planilha:
+      1. Coluna AI (pendência): desmarcar OK e células vazias → só sobram pendências reais
+      2. Coluna D (mês): manter apenas meses de 2026 (janeiro a novembro, excluir dezembro)
+      3. Agrupar por GM e contar quantas pendências cada gerente tem
     """
     try:
         col_pendencia = encontrar_coluna(df, ['pendencia', 'ocorrencia', 'status_pendencia'])
         col_gm = encontrar_coluna(df, ['gm', 'gerente', 'gerente_de_mercado'])
-        col_data = encontrar_coluna(df, ['data_coleta', 'data', 'dt_coleta'])
+        col_mes = encontrar_coluna(df, ['mes'])
         
         if not col_pendencia or not col_gm:
+            print("⚠️ [KPIs] Não Conformidade - Colunas pendencia/gm não encontradas")
             return {"labels": [], "valores": []}
 
         df_work = df.copy()
         df_work['_pend_norm'] = df_work[col_pendencia].astype(str).str.lower().str.strip()
         
-        # Filtra 2026 se possível
-        if col_data:
-            df_work[col_data] = pd.to_datetime(df_work[col_data], errors='coerce')
-            df_work = df_work[df_work[col_data].dt.year == 2026]
-        
-        # Filtra apenas linhas COM pendência real (não vazia, não ok, não na)
-        invalidos = ["", "ok", "na", "n/a", "nan", "none", "-"]
+        # PASSO 1: Filtro na coluna de pendências — remove OK e células vazias
+        # (exatamente como desmarcar "ok" e "vazia" no filtro do Excel)
+        invalidos = ["", "ok", "nan", "none"]
         df_pendentes = df_work[~df_work['_pend_norm'].isin(invalidos)]
+        
+        print(f"📊 [KPIs] Não Conformidade - Após remover OK/vazias: {len(df_pendentes)} linhas")
+        
+        # PASSO 2: Filtro na coluna de mês — manter apenas meses de 2026
+        # Dezembro pertence ao ciclo anterior, por isso é excluído
+        if col_mes and not df_pendentes.empty:
+            df_pendentes = df_pendentes.copy()
+            df_pendentes['_mes_norm'] = df_pendentes[col_mes].astype(str).str.lower().str.strip()
+            meses_2026 = [
+                'janeiro', 'fevereiro', 'marco', 'março', 'abril', 'maio', 'junho',
+                'julho', 'agosto', 'setembro', 'outubro', 'novembro'
+            ]
+            df_pendentes = df_pendentes[df_pendentes['_mes_norm'].isin(meses_2026)]
+            print(f"📊 [KPIs] Não Conformidade - Após filtro meses 2026: {len(df_pendentes)} linhas")
         
         if df_pendentes.empty:
             return {"labels": [], "valores": []}
