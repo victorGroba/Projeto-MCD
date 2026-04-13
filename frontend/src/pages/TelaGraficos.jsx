@@ -1143,7 +1143,7 @@ export default function TelaGraficos() {
         {/* --- GRÁFICO NÃO CONFORMIDADE POR GERENTE --- */}
         {data?.nao_conformidade_gm?.labels?.length > 0 && (
           <CollapsibleSection
-            title="Índice de Não Conformidade por Gerente de Mercado (2026)"
+            title="Pendências Abertas por Gerente de Mercado"
             icon={<UserX className="text-red-400" size={22} />}
           >
             <div style={{ height: Math.max(300, (data?.nao_conformidade_gm?.labels?.length || 5) * 40) }} className="mt-4">
