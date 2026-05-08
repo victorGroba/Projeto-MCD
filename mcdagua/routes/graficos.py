@@ -61,9 +61,9 @@ def graficos_data():
         df_gelo = ler_range_exato(path, ABA, "50:54", usecols="K:O")
         response_data["gelo"] = processar_status_bloco(df_gelo)
 
-        # 5. PENDÊNCIAS GELO (K65:N69)
-        print(f"📂 Lendo Pendências Gelo: {ABA} K65:N69")
-        df_pend = ler_range_exato(path, ABA, "65:69", usecols="K:N")
+        # 5. PENDÊNCIAS GELO (K65:O69) — inclui Gelo Pool na coluna O
+        print(f"📂 Lendo Pendências Gelo: {ABA} K65:O69")
+        df_pend = ler_range_exato(path, ABA, "65:69", usecols="K:O")
         response_data["pendencias_gelo"] = processar_pendencias_top(df_pend)
 
         # Extras (dados da aba GERAL)
