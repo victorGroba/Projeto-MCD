@@ -876,6 +876,28 @@ export default function TelaGraficos() {
               data={buildTipoColetaChart(data?.tipo_coleta)}
               options={{
                 ...commonOptions,
+                plugins: {
+                  ...commonOptions.plugins,
+                  tooltip: {
+                    ...commonOptions.plugins.tooltip,
+                    callbacks: {
+                      label: function (context) {
+                        const value = context.parsed.y;
+                        const dataIndex = context.dataIndex;
+                        // Soma todos os datasets nesse mês para calcular o total
+                        let totalMes = 0;
+                        context.chart.data.datasets.forEach(ds => {
+                          totalMes += (Number(ds.data[dataIndex]) || 0);
+                        });
+                        if (totalMes > 0 && value > 0) {
+                          const pct = ((value / totalMes) * 100).toFixed(1).replace('.', ',');
+                          return `${context.dataset.label}: ${value} (${pct}%)`;
+                        }
+                        return `${context.dataset.label}: ${value}`;
+                      }
+                    }
+                  }
+                },
                 scales: {
                   ...commonOptions.scales,
                   x: { ...commonOptions.scales.x, stacked: false },

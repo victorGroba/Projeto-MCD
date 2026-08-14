@@ -102,11 +102,12 @@ def get_programado_realizado(df):
         # Conta realizados por mês
         realizado_series = df_validos.groupby('_mes_num').size()
         
-        programado_meta = {1: 193, 2: 103, 3: 76, 4: 211, 5: 186, 6: 221}
+        programado_meta = {1: 193, 2: 103, 3: 76, 4: 211, 5: 186, 6: 221, 7: 79, 8: 82, 9: 212, 10: 188, 11: 215, 12: 80}
         
-        labels_meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun"]
-        realizado_values = [int(realizado_series.get(m, 0)) for m in range(1, 7)]
-        programado_values = [programado_meta.get(m, 0) for m in range(1, 7)]
+        labels_meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+                        "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+        realizado_values = [int(realizado_series.get(m, 0)) for m in range(1, 13)]
+        programado_values = [programado_meta.get(m, 0) for m in range(1, 13)]
         
         print(f"📊 [KPIs] Programado vs Realizado - Realizado: {realizado_values}")
         
