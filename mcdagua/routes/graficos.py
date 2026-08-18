@@ -20,6 +20,11 @@ from mcdagua.services.kpis import (
     get_tipo_coleta_por_mes, 
     get_nao_conformidade_por_gerente
 )
+from mcdagua.services.appcc_processor import (
+    processar_microorganismos,
+    processar_pendencias_appcc,
+    processar_regionais_appcc
+)
 
 graficos_bp = Blueprint("graficos", __name__)
 
@@ -116,10 +121,39 @@ def graficos_data():
 @graficos_bp.route("/api/haccp-graficos")
 def haccp_graficos():
     try:
-        data = load_haccp_graphics_data()
         response_data = {}
+        
+        # --- Gráficos existentes (tabelas dinâmicas da aba GRÁFICO) ---
+        data = load_haccp_graphics_data()
         for cat, val in data.items():
             response_data[cat] = {"labels": list(val.keys()), "values": list(val.values())} if val else {"labels": [], "values": []}
+        
+        # --- Novos gráficos APPCC (calculados da aba GERAL) ---
+        path_haccp = current_app.config.get("PATH_HACCP")
+        path_geral = current_app.config.get("PATH_GERAL")
+        
+        if path_haccp and os.path.exists(path_haccp):
+            # 1. Presença de Microrganismos por Equipamento
+            try:
+                response_data["microorganismos"] = processar_microorganismos(path_haccp)
+            except Exception as e:
+                print(f"⚠️ [HACCP] Erro microorganismos: {e}")
+                response_data["microorganismos"] = {"labels": [], "mesofilos": [], "enterobacterias": [], "total_restaurantes": 0}
+            
+            # 2. Principais Pendências por Tipo
+            try:
+                response_data["pendencias_tipo"] = processar_pendencias_appcc(path_haccp)
+            except Exception as e:
+                print(f"⚠️ [HACCP] Erro pendências: {e}")
+                response_data["pendencias_tipo"] = {"labels": [], "valores": [], "total_restaurantes": 0}
+            
+            # 3. Restaurantes por Regional (cruza com planilha de potabilidade)
+            try:
+                response_data["restaurantes_regional"] = processar_regionais_appcc(path_haccp, path_geral)
+            except Exception as e:
+                print(f"⚠️ [HACCP] Erro regionais: {e}")
+                response_data["restaurantes_regional"] = {"labels": [], "valores": [], "total_restaurantes": 0}
+        
         return jsonify(response_data)
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
