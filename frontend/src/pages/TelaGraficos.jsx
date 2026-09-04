@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Line, Bar } from "react-chartjs-2";
 import { api } from "../api/api";
-import { ArrowLeft, RefreshCw, BarChart2, Target, AlertTriangle, List, UserX, ChevronDown, ChevronUp, Filter } from "lucide-react";
+import { ArrowLeft, RefreshCw, BarChart2, Target, AlertTriangle, List, UserX, Users, ChevronDown, ChevronUp, Filter, X, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   Chart as ChartJS,
@@ -151,12 +151,386 @@ function CollapsibleSection({ title, icon, badge, defaultOpen = true, children }
   );
 }
 
+// ======================================================================
+// DOSSIÊ DE CONFORMIDADE — paleta e componentes
+// Paleta de status validada para daltonismo sobre a superfície slate-900:
+// pior par adjacente ΔE 11,4 (protan) e 19,7 (visão normal).
+// A distinção nunca fica só na cor — posição na pilha, rótulo direto e
+// legenda carregam a mesma informação.
+// ======================================================================
+const VIZ = {
+  ok: "#34d399",
+  abaixo: "#e05252",
+  semNota: "#7c8899",
+  surface: "#0f172a",
+  grid: "#1e293b",
+  ink: "#e2e8f0",
+  inkMuted: "#94a3b8",
+  inkFaint: "#64748b",
+};
+
+const STATUS_VIZ = [
+  { chave: "ok", status: "100", label: "Nota 100%", cor: VIZ.ok },
+  { chave: "abaixo", status: "abaixo", label: "Abaixo de 100%", cor: VIZ.abaixo },
+  { chave: "sem_nota", status: "sem_nota", label: "Sem nota", cor: VIZ.semNota },
+];
+
+const FONTE_VIZ = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+const fmtInt = (n) => new Intl.NumberFormat("pt-BR").format(Math.round(n || 0));
+const fmtPct = (n, casas = 1) =>
+  `${(Number(n) || 0).toFixed(casas).replace(".", ",")}%`;
+
+const PARTICULAS_NOME = new Set(["de", "da", "do", "das", "dos", "e"]);
+
+// "PAULO HENRIQUE DOS SANTOS" -> "Paulo Santos" (eixo legível; o tooltip traz o nome completo)
+function nomeCurto(nome) {
+  const partes = String(nome).trim().toLowerCase().split(/\s+/).filter((p) => p && !PARTICULAS_NOME.has(p));
+  const titulo = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  if (!partes.length) return String(nome);
+  if (partes.length === 1) return titulo(partes[0]);
+  return `${titulo(partes[0])} ${titulo(partes[partes.length - 1])}`;
+}
+
+// Rótulo direto no topo (ou na ponta) de cada pilha — um por coluna, nunca por segmento
+const stackTopLabelPlugin = {
+  id: "stackTopLabel",
+  afterDatasetsDraw(chart) {
+    const rotulos = chart.options?._topLabels;
+    if (!rotulos) return;
+    const { ctx } = chart;
+    const horizontal = chart.options?.indexAxis === "y";
+
+    chart.data.labels.forEach((_, i) => {
+      if (rotulos[i] == null) return;
+      let ponta = null;
+      let coord = null;
+      chart.data.datasets.forEach((ds, di) => {
+        const meta = chart.getDatasetMeta(di);
+        if (meta.hidden) return;
+        const el = meta.data[i];
+        if (!el || !((Number(ds.data[i]) || 0) > 0)) return;
+        if (horizontal) {
+          ponta = ponta === null ? el.x : Math.max(ponta, el.x);
+          coord = el.y;
+        } else {
+          ponta = ponta === null ? el.y : Math.min(ponta, el.y);
+          coord = el.x;
+        }
+      });
+      if (ponta === null) return;
+
+      const item = rotulos[i];
+      const principal = typeof item === "string" ? item : item.principal;
+      const secundario = typeof item === "string" ? null : item.secundario;
+
+      ctx.save();
+      ctx.textBaseline = horizontal ? "middle" : "bottom";
+      ctx.textAlign = horizontal ? "left" : "center";
+      const x = horizontal ? ponta + 12 : coord;
+      const y = horizontal ? coord : ponta - 9;
+
+      ctx.fillStyle = VIZ.ink;
+      ctx.font = `600 12px ${FONTE_VIZ}`;
+      ctx.fillText(principal, x, y);
+
+      // O denominador impede que uma proporção sobre poucos casos
+      // pareça equivalente a uma sobre centenas
+      if (secundario) {
+        const larg = ctx.measureText(principal).width;
+        ctx.fillStyle = VIZ.inkFaint;
+        ctx.font = `400 11px ${FONTE_VIZ}`;
+        ctx.fillText(secundario, x + larg + 6, y);
+      }
+      ctx.restore();
+    });
+  },
+};
+
+// --- Controle segmentado (troca a série exibida) ---
+function SegmentedControl({ value, onChange, options }) {
+  return (
+    <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-800/70 border border-slate-700/60">
+      {options.map((op) => (
+        <button
+          key={op.id}
+          onClick={() => onChange(op.id)}
+          className={`px-3 py-1.5 rounded-[6px] text-xs font-medium transition-colors ${
+            value === op.id
+              ? "bg-slate-700 text-slate-100"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          {op.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// --- Legenda (sempre presente quando há 2+ séries) ---
+function LegendaViz({ itens }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+      {itens.map((it) => (
+        <span key={it.label} className="inline-flex items-center gap-2">
+          <span
+            className="w-2.5 h-2.5 rounded-[3px] shrink-0"
+            style={{ background: it.cor }}
+          />
+          <span className="text-xs text-slate-400">{it.label}</span>
+          {it.valor != null && (
+            <span className="text-xs font-semibold text-slate-200 tabular-nums">
+              {fmtInt(it.valor)}
+            </span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// --- Barra de proporção fina (part-to-whole de uma linha só) ---
+function BarraProporcao({ partes, className = "" }) {
+  const total = partes.reduce((a, p) => a + p.valor, 0) || 1;
+  return (
+    <div className={`flex w-full h-1.5 rounded-full overflow-hidden gap-[2px] ${className}`}>
+      {partes.map((p) => (
+        <div
+          key={p.label}
+          style={{ width: `${(p.valor / total) * 100}%`, background: p.cor }}
+          title={`${p.label}: ${fmtInt(p.valor)}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+// --- Cabeçalho estatístico: a métrica é o número, não um gráfico ---
+function ResumoConformidade({ ok, abaixo, semNota, rotulo }) {
+  const base = ok + abaixo;
+  const pct = base > 0 ? (ok / base) * 100 : 0;
+  return (
+    <div className="flex flex-col lg:flex-row lg:items-end gap-5 lg:gap-10">
+      <div className="shrink-0">
+        <p className="text-[40px] leading-none font-semibold text-slate-50 tabular-nums">
+          {fmtPct(pct)}
+        </p>
+        <p className="text-xs text-slate-400 mt-1.5">com nota 100%</p>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-slate-500 mb-2">
+          {fmtInt(base + semNota)} {rotulo}
+        </p>
+        <BarraProporcao
+          partes={[
+            { label: "Nota 100%", valor: ok, cor: VIZ.ok },
+            { label: "Abaixo de 100%", valor: abaixo, cor: VIZ.abaixo },
+            ...(semNota > 0 ? [{ label: "Sem nota", valor: semNota, cor: VIZ.semNota }] : []),
+          ]}
+        />
+        <div className="mt-3">
+          <LegendaViz
+            itens={[
+              { label: "Nota 100%", cor: VIZ.ok, valor: ok },
+              { label: "Abaixo de 100%", cor: VIZ.abaixo, valor: abaixo },
+              ...(semNota > 0 ? [{ label: "Sem nota", cor: VIZ.semNota, valor: semNota }] : []),
+            ]}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Janela de dossiê (abre ao clicar numa coluna) ---
+function DossieModal({ dossie, onClose }) {
+  const [filtro, setFiltro] = useState("todos");
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!dossie) return null;
+
+  const { titulo, subtitulo, registros = [], colunas, modo = "conformidade" } = dossie;
+
+  const qtdOk = registros.filter((r) => r.status === "100").length;
+  const qtdAbaixo = registros.filter((r) => r.status === "abaixo").length;
+  const qtdSem = registros.filter((r) => r.status === "sem_nota").length;
+
+  const linhas = filtro === "todos" ? registros : registros.filter((r) => r.status === filtro);
+
+  const cols = colunas || [
+    { key: "sigla", label: "Sigla" },
+    { key: "regional", label: "Regional" },
+    { key: "mes", label: "Mês" },
+    { key: "data", label: "Data" },
+    { key: "tipo", label: "Tipo" },
+    { key: "nota", label: "Nota" },
+    { key: "pendencia", label: "Pendência" },
+    { key: "gm", label: "Gerente" },
+  ];
+
+  const exportarCsv = () => {
+    const sep = ";";
+    const linhasCsv = [
+      cols.map((c) => c.label).join(sep),
+      ...linhas.map((l) =>
+        cols.map((c) => `"${String(l[c.key] ?? "").replace(/"/g, '""')}"`).join(sep)
+      ),
+    ].join("\n");
+    const blob = new Blob(["﻿" + linhasCsv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dossie-${String(titulo).toLowerCase().replace(/[^a-z0-9]+/gi, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const filtros = [
+    { id: "todos", label: "Todas", qtd: registros.length, cor: null },
+    { id: "100", label: "Nota 100%", qtd: qtdOk, cor: VIZ.ok },
+    { id: "abaixo", label: "Abaixo de 100%", qtd: qtdAbaixo, cor: VIZ.abaixo },
+    ...(qtdSem > 0 ? [{ id: "sem_nota", label: "Sem nota", qtd: qtdSem, cor: VIZ.semNota }] : []),
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[88vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Cabeçalho */}
+        <div className="flex items-start justify-between gap-4 px-7 pt-6 pb-5">
+          <div className="min-w-0">
+            <h3 className="text-xl font-semibold text-slate-50 truncate">{titulo}</h3>
+            {subtitulo && <p className="text-sm text-slate-500 mt-1">{subtitulo}</p>}
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 -mr-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors shrink-0"
+            aria-label="Fechar"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Resumo */}
+        {modo === "conformidade" && (
+          <div className="px-7 pb-5">
+            <ResumoConformidade
+              ok={qtdOk}
+              abaixo={qtdAbaixo}
+              semNota={qtdSem}
+              rotulo="coletas no recorte"
+            />
+          </div>
+        )}
+
+        {/* Filtros */}
+        <div className="flex flex-wrap items-center gap-2 px-7 pb-4 border-b border-slate-800">
+          {modo === "conformidade" &&
+            filtros.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFiltro(f.id)}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  filtro === f.id
+                    ? "bg-slate-800 text-slate-100 border-slate-600"
+                    : "bg-transparent text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700"
+                }`}
+              >
+                {f.cor && (
+                  <span className="w-2 h-2 rounded-[2px]" style={{ background: f.cor }} />
+                )}
+                {f.label}
+                <span className="tabular-nums text-slate-500">{fmtInt(f.qtd)}</span>
+              </button>
+            ))}
+          <button
+            onClick={exportarCsv}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 border border-slate-700 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <Download size={13} /> Exportar CSV
+          </button>
+        </div>
+
+        {/* Tabela */}
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-[13px]">
+            <thead className="sticky top-0 bg-slate-900 z-10">
+              <tr className="border-b border-slate-800">
+                {cols.map((c) => (
+                  <th
+                    key={c.key}
+                    className="text-left font-medium text-[11px] uppercase tracking-wider text-slate-500 py-3 px-3 first:pl-7 last:pr-7 whitespace-nowrap"
+                  >
+                    {c.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.length === 0 && (
+                <tr>
+                  <td colSpan={cols.length} className="py-12 text-center text-slate-600">
+                    Nenhum registro para este filtro.
+                  </td>
+                </tr>
+              )}
+              {linhas.map((l, i) => (
+                <tr key={i} className="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
+                  {cols.map((c) => (
+                    <td
+                      key={c.key}
+                      className="py-2.5 px-3 first:pl-7 last:pr-7 align-top text-slate-300"
+                    >
+                      {c.key === "nota" && modo === "conformidade" ? (
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{
+                              background:
+                                l.status === "100" ? VIZ.ok
+                                : l.status === "abaixo" ? VIZ.abaixo
+                                : VIZ.semNota,
+                            }}
+                          />
+                          <span className="tabular-nums">{l[c.key] || "—"}</span>
+                        </span>
+                      ) : (
+                        l[c.key] || "—"
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TelaGraficos() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(""); // Filtro mês para regional backroom
   const [selectedMonthGelo, setSelectedMonthGelo] = useState(""); // Filtro mês para regional gelo pool
+  const [dossie, setDossie] = useState(null); // Janela de detalhe (dossiê de conformidade)
+  const [tipoView, setTipoView] = useState("Coleta");        // série do gráfico de tipo de coleta
+  const [tipoEscala, setTipoEscala] = useState("valor");     // "valor" | "pct"
+  const [gmView, setGmView] = useState("Todas");             // recorte do gráfico por gerente
+  const [gmEscala, setGmEscala] = useState("pct");           // "valor" | "pct"
 
   const fetchData = () => {
     setLoading(true);
@@ -359,12 +733,31 @@ export default function TelaGraficos() {
     );
   };
 
+  // Tooltip padrão dos gráficos: passar o mouse mostra a categoria inteira
+  // (todas as séries daquele ponto), não apenas a fatia sob o cursor.
+  const tooltipPadrao = {
+    backgroundColor: "#1e293b",
+    titleColor: "#e2e8f0",
+    bodyColor: "#cbd5e1",
+    titleFont: { size: 13, weight: "600" },
+    bodyFont: { size: 12 },
+    padding: 12,
+    cornerRadius: 8,
+    borderColor: "#334155",
+    borderWidth: 1,
+    usePointStyle: true,
+    boxWidth: 8,
+    boxHeight: 8,
+    boxPadding: 5,
+  };
+
   const commonOptions = {
     maintainAspectRatio: false,
     responsive: true,
+    interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: { labels: { color: "#cbd5e1", usePointStyle: true }, position: 'bottom' },
-      tooltip: { backgroundColor: "#1e293b" },
+      tooltip: tooltipPadrao,
       datalabels: { display: false } // Desabilita globalmente, ativa apenas onde necessário
     },
     scales: {
@@ -432,6 +825,7 @@ export default function TelaGraficos() {
   const stackedMensalOptions = {
     maintainAspectRatio: false,
     responsive: true,
+    interaction: { mode: 'index', intersect: false },
     _isStackedConformidade: true,
     layout: { padding: { top: 30 } },
     scales: {
@@ -540,6 +934,7 @@ export default function TelaGraficos() {
   const stackedRegionalOptions = {
     maintainAspectRatio: false,
     responsive: true,
+    interaction: { mode: 'index', intersect: false },
     _isStackedConformidade: true,
     layout: { padding: { top: 30 } },
     scales: {
@@ -646,6 +1041,7 @@ export default function TelaGraficos() {
   const stackedGeloMensalOptions = {
     maintainAspectRatio: false,
     responsive: true,
+    interaction: { mode: 'index', intersect: false },
     _isStackedConformidade: true,
     layout: { padding: { top: 30 } },
     scales: {
@@ -754,6 +1150,7 @@ export default function TelaGraficos() {
   const stackedGeloRegionalOptions = {
     maintainAspectRatio: false,
     responsive: true,
+    interaction: { mode: 'index', intersect: false },
     _isStackedConformidade: true,
     layout: { padding: { top: 30 } },
     scales: {
@@ -826,6 +1223,284 @@ export default function TelaGraficos() {
     }
   };
 
+  // ====================================================================
+  // DOSSIÊ DE CONFORMIDADE (nota 100% x abaixo de 100%)
+  // ====================================================================
+  const conf = data?.conformidade;
+  const registrosConf = conf?.registros || [];
+  const _soma = (arr) => (arr || []).reduce((a, b) => a + (Number(b) || 0), 0);
+
+  // --- Tipo de coleta: uma série por vez, escolhida no controle segmentado ---
+  const gruposComDados = (conf?.grupos || []).filter((g) => {
+    const d = conf?.tipo_coleta?.[g];
+    return d && _soma(d.ok) + _soma(d.abaixo) + _soma(d.sem_nota) > 0;
+  });
+  const tipoAtual = gruposComDados.includes(tipoView) ? tipoView : gruposComDados[0];
+  const dadosTipo = conf?.tipo_coleta?.[tipoAtual];
+
+  const totaisMes = (conf?.labels || []).map((_, i) =>
+    dadosTipo ? dadosTipo.ok[i] + dadosTipo.abaixo[i] + dadosTipo.sem_nota[i] : 0
+  );
+
+  const _montarDatasets = (fonte, totais, escala, horizontal) =>
+    STATUS_VIZ.filter((s) => _soma(fonte[s.chave]) > 0).map((s) => ({
+      label: s.label,
+      data:
+        escala === "pct"
+          ? fonte[s.chave].map((v, i) => (totais[i] ? (v / totais[i]) * 100 : 0))
+          : fonte[s.chave].slice(),
+      _abs: fonte[s.chave],
+      _status: s.status,
+      backgroundColor: s.cor,
+      borderColor: VIZ.surface, // gap de 2px entre segmentos, em vez de contorno
+      // sem borda quando o segmento é zero, senão sobra um traço de 2px no gráfico
+      borderWidth: (ctx) => ((Number(ctx.dataset.data[ctx.dataIndex]) || 0) > 0 ? 2 : 0),
+      borderRadius: 3,
+      borderSkipped: false,
+      barPercentage: horizontal ? 0.58 : 0.52,
+      categoryPercentage: 0.8,
+      stack: "conformidade",
+    }));
+
+  const buildTipoColetaChart2 = () => {
+    if (!dadosTipo) return null;
+    return {
+      labels: conf.labels,
+      datasets: _montarDatasets(dadosTipo, totaisMes, tipoEscala, false),
+    };
+  };
+
+  // O secundário é o nº de coletas com nota: sem ele, um mês com 14 avaliadas
+  // exibiria o mesmo "79%" de um mês com 200
+  const rotulosTopoMes = (conf?.labels || []).map((_, i) => {
+    if (!dadosTipo) return null;
+    const base = dadosTipo.ok[i] + dadosTipo.abaixo[i];
+    if (!base) return null;
+    return {
+      principal: fmtPct((dadosTipo.ok[i] / base) * 100, 0),
+      secundario: base < totaisMes[i] ? `/${fmtInt(base)}` : null,
+    };
+  });
+
+  // --- Gerentes: soma dos grupos escolhidos, ordenado por conformidade ---
+  const gmOpcoes = [
+    { id: "Todas", label: "Todas" },
+    ...(conf?.gerentes?.grupos || []).map((g) => ({
+      id: g,
+      label: g === "Cronograma/Inauguração" ? "Cronograma" : g,
+    })),
+  ];
+
+  const gerentesOrdenados = (() => {
+    const g = conf?.gerentes;
+    if (!g?.labels?.length) return null;
+    const grupos = gmView === "Todas" ? g.grupos : [gmView];
+    const linhas = g.labels.map((nome, i) => {
+      const acc = { ok: 0, abaixo: 0, sem_nota: 0 };
+      grupos.forEach((gr) => {
+        const d = g.dados[gr];
+        if (!d) return;
+        acc.ok += d.ok[i] || 0;
+        acc.abaixo += d.abaixo[i] || 0;
+        acc.sem_nota += d.sem_nota[i] || 0;
+      });
+      const base = acc.ok + acc.abaixo;
+      return { nome, ...acc, total: base + acc.sem_nota, pct: base > 0 ? (acc.ok / base) * 100 : -1 };
+    });
+    return linhas.filter((l) => l.total > 0).sort((a, b) => b.pct - a.pct);
+  })();
+
+  const buildConformidadeGmChart = () => {
+    if (!gerentesOrdenados?.length) return null;
+    const fonte = {
+      ok: gerentesOrdenados.map((l) => l.ok),
+      abaixo: gerentesOrdenados.map((l) => l.abaixo),
+      sem_nota: gerentesOrdenados.map((l) => l.sem_nota),
+    };
+    const totais = gerentesOrdenados.map((l) => l.total);
+    return {
+      labels: gerentesOrdenados.map((l) => nomeCurto(l.nome)),
+      datasets: _montarDatasets(fonte, totais, gmEscala, true),
+    };
+  };
+
+  const rotulosGm = (gerentesOrdenados || []).map((l) => ({
+    principal: l.pct >= 0 ? fmtPct(l.pct, 0) : "—",
+    secundario: fmtInt(l.total),
+  }));
+
+  // --- Opções compartilhadas dos dois gráficos ---
+  const _opcoesViz = ({ horizontal, escala, rotulos, nomesCompletos, aoClicar }) => {
+    const eixoValor = {
+      stacked: true,
+      beginAtZero: true,
+      border: { display: false },
+      grid: { color: VIZ.grid, drawTicks: false },
+      ticks: {
+        color: VIZ.inkFaint,
+        font: { family: FONTE_VIZ, size: 11 },
+        padding: 8,
+        ...(escala === "pct" ? { stepSize: 25 } : {}),
+        callback: (v) => (escala === "pct" ? `${v}%` : Number.isInteger(v) ? v : null),
+      },
+      ...(escala === "pct" ? { max: 100 } : {}),
+
+    };
+    const eixoCategoria = {
+      stacked: true,
+      border: { display: false },
+      grid: { display: false },
+      ticks: {
+        color: VIZ.inkMuted,
+        font: { family: FONTE_VIZ, size: 12 },
+        padding: 8,
+        autoSkip: false,
+      },
+    };
+
+    return {
+      maintainAspectRatio: false,
+      responsive: true,
+      indexAxis: horizontal ? "y" : "x",
+      _isStackedConformidade: true,
+      _topLabels: rotulos,
+      layout: { padding: horizontal ? { right: 96, left: 4 } : { top: 26, right: 4 } },
+      interaction: { mode: "index", intersect: false },
+      onHover: (evt, elements) => {
+        if (evt?.native?.target) {
+          evt.native.target.style.cursor = elements.length ? "pointer" : "default";
+        }
+      },
+      onClick: (evt, elements, chart) => {
+        if (!elements.length) return;
+        aoClicar(chart.data.datasets[elements[0].datasetIndex], elements[0].index);
+      },
+      plugins: {
+        legend: { display: false }, // legenda em HTML, acima do gráfico
+        datalabels: { display: false },
+        tooltip: {
+          backgroundColor: "#1e293b",
+          titleColor: VIZ.ink,
+          bodyColor: VIZ.inkMuted,
+          footerColor: VIZ.inkFaint,
+          titleFont: { family: FONTE_VIZ, size: 13, weight: "600" },
+          bodyFont: { family: FONTE_VIZ, size: 12 },
+          footerFont: { family: FONTE_VIZ, size: 11, weight: "400" },
+          padding: 12,
+          cornerRadius: 8,
+          borderColor: "#334155",
+          borderWidth: 1,
+          displayColors: true,
+          boxWidth: 8,
+          boxHeight: 8,
+          boxPadding: 5,
+          usePointStyle: true,
+          // esconde as séries zeradas do mês/gerente — só ruído no tooltip
+          filter: (item) => (Number(item.dataset._abs?.[item.dataIndex]) || 0) > 0,
+          callbacks: {
+            title: (itens) =>
+              nomesCompletos ? nomesCompletos[itens?.[0]?.dataIndex] : itens?.[0]?.label,
+            label: (ctx) => {
+              const abs = ctx.dataset._abs?.[ctx.dataIndex] ?? ctx.raw;
+              const total = ctx.chart.data.datasets.reduce(
+                (a, ds) => a + (Number(ds._abs?.[ctx.dataIndex]) || 0),
+                0
+              );
+              const pct = total > 0 ? (abs / total) * 100 : 0;
+              return ` ${ctx.dataset.label}: ${fmtInt(abs)} (${fmtPct(pct)})`;
+            },
+            footer: (itens) => {
+              const i = itens?.[0]?.dataIndex;
+              if (i == null) return "";
+              const dss = itens[0].chart.data.datasets;
+              const somaDe = (st) =>
+                Number(dss.find((d) => d._status === st)?._abs?.[i]) || 0;
+              const total = dss.reduce((a, d) => a + (Number(d._abs?.[i]) || 0), 0);
+              const base = somaDe("100") + somaDe("abaixo");
+              return [
+                base > 0
+                  ? `Total ${fmtInt(total)} · ${fmtPct((somaDe("100") / base) * 100)} com nota 100%`
+                  : `Total ${fmtInt(total)}`,
+                "Clique para abrir o dossiê",
+              ];
+            },
+          },
+        },
+      },
+      scales: horizontal
+        ? { x: eixoValor, y: eixoCategoria }
+        : { x: eixoCategoria, y: eixoValor },
+    };
+  };
+
+  const opcoesTipoColeta = _opcoesViz({
+    horizontal: false,
+    escala: tipoEscala,
+    rotulos: rotulosTopoMes,
+    aoClicar: (_ds, index) => {
+      const mes = conf?.labels?.[index];
+      setDossie({
+        titulo: `${tipoAtual} · ${mes}`,
+        subtitulo: "Coletas do mês, por resultado da nota",
+        registros: registrosConf.filter((r) => r.grupo === tipoAtual && r.mes === mes),
+      });
+    },
+  });
+
+  const opcoesConformidadeGm = _opcoesViz({
+    horizontal: true,
+    escala: gmEscala,
+    rotulos: rotulosGm,
+    nomesCompletos: (gerentesOrdenados || []).map((l) => l.nome),
+    aoClicar: (_ds, index) => {
+      const nome = gerentesOrdenados?.[index]?.nome;
+      const grupos = gmView === "Todas" ? conf?.gerentes?.grupos || [] : [gmView];
+      setDossie({
+        titulo: nome,
+        subtitulo:
+          gmView === "Todas"
+            ? "Todas as coletas de 2026"
+            : `${gmView} — 2026`,
+        registros: registrosConf.filter(
+          (r) => r.gm === nome && grupos.includes(r.grupo_gm)
+        ),
+      });
+    },
+  });
+
+  // --- Totais do recorte exibido (cabeçalho do bloco de tipo de coleta) ---
+  const totaisTipo = {
+    ok: dadosTipo ? _soma(dadosTipo.ok) : 0,
+    abaixo: dadosTipo ? _soma(dadosTipo.abaixo) : 0,
+    semNota: dadosTipo ? _soma(dadosTipo.sem_nota) : 0,
+  };
+
+  const totaisGm = (gerentesOrdenados || []).reduce(
+    (a, l) => ({ ok: a.ok + l.ok, abaixo: a.abaixo + l.abaixo, semNota: a.semNota + l.sem_nota }),
+    { ok: 0, abaixo: 0, semNota: 0 }
+  );
+
+  // --- Clique no gráfico de pendências por gerente ---
+  const abrirDossiePendencias = (gmNome) => {
+    const detalhes = data?.nao_conformidade_gm?.detalhes?.[gmNome] || [];
+    setDossie({
+      modo: "pendencias",
+      titulo: gmNome,
+      subtitulo: `${detalhes.length} pendência(s) aberta(s)`,
+      registros: detalhes,
+      colunas: [
+        { key: "sigla", label: "Sigla" },
+        { key: "regional", label: "Regional" },
+        { key: "mes", label: "Mês" },
+        { key: "data", label: "Data" },
+        { key: "tipo", label: "Tipo de coleta" },
+        { key: "pendencia", label: "Pendência" },
+        { key: "vencimento", label: "Vencimento" },
+        { key: "consultor", label: "Consultor" },
+      ],
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 font-sans">
       <div className="max-w-7xl mx-auto">
@@ -866,47 +1541,113 @@ export default function TelaGraficos() {
           </div>
         </CollapsibleSection>
 
-        {/* --- 2. GRÁFICO TIPO DE COLETA POR MÊS --- */}
+        {/* --- 2. TIPO DE COLETA POR MÊS (conformidade da nota) --- */}
         <CollapsibleSection
           title="Tipo de Coleta por Mês (2026)"
-          icon={<List className="text-blue-400" size={22} />}
+          icon={<List className="text-slate-400" size={20} />}
         >
-          <div className="h-80 mt-4">
-            <Bar
-              data={buildTipoColetaChart(data?.tipo_coleta)}
-              options={{
-                ...commonOptions,
-                plugins: {
-                  ...commonOptions.plugins,
-                  tooltip: {
-                    ...commonOptions.plugins.tooltip,
-                    callbacks: {
-                      label: function (context) {
-                        const value = context.parsed.y;
-                        const dataIndex = context.dataIndex;
-                        // Soma todos os datasets nesse mês para calcular o total
-                        let totalMes = 0;
-                        context.chart.data.datasets.forEach(ds => {
-                          totalMes += (Number(ds.data[dataIndex]) || 0);
-                        });
-                        if (totalMes > 0 && value > 0) {
-                          const pct = ((value / totalMes) * 100).toFixed(1).replace('.', ',');
-                          return `${context.dataset.label}: ${value} (${pct}%)`;
-                        }
-                        return `${context.dataset.label}: ${value}`;
-                      }
-                    }
+          {conf?.labels?.length && dadosTipo ? (
+            <div className="pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <SegmentedControl
+                  value={tipoAtual}
+                  onChange={setTipoView}
+                  options={gruposComDados.map((g) => ({ id: g, label: g }))}
+                />
+                <SegmentedControl
+                  value={tipoEscala}
+                  onChange={setTipoEscala}
+                  options={[
+                    { id: "valor", label: "Coletas" },
+                    { id: "pct", label: "Proporção" },
+                  ]}
+                />
+              </div>
+
+              <div className="mt-7">
+                <ResumoConformidade
+                  ok={totaisTipo.ok}
+                  abaixo={totaisTipo.abaixo}
+                  semNota={totaisTipo.semNota}
+                  rotulo={`registros de ${tipoAtual.toLowerCase()} em 2026`}
+                />
+              </div>
+
+              <div className="h-[330px] mt-8">
+                <Bar data={buildTipoColetaChart2()} options={opcoesTipoColeta} plugins={[stackTopLabelPlugin]} />
+              </div>
+
+              <p className="text-xs text-slate-600 mt-4">
+                Acima de cada mês, o percentual com nota 100%; quando há coletas sem nota,
+                o número cinza indica sobre quantas o percentual foi calculado. Clique numa
+                coluna para abrir o dossiê com a lista de restaurantes.
+              </p>
+            </div>
+          ) : (
+            <div className="h-80 mt-4">
+              <Bar
+                data={buildTipoColetaChart(data?.tipo_coleta)}
+                options={{
+                  ...commonOptions,
+                  scales: {
+                    ...commonOptions.scales,
+                    x: { ...commonOptions.scales.x, stacked: false },
+                    y: { ...commonOptions.scales.y, stacked: false }
                   }
-                },
-                scales: {
-                  ...commonOptions.scales,
-                  x: { ...commonOptions.scales.x, stacked: false },
-                  y: { ...commonOptions.scales.y, stacked: false }
-                }
-              }}
-            />
-          </div>
+                }}
+              />
+            </div>
+          )}
         </CollapsibleSection>
+
+        {/* --- 2b. CONFORMIDADE POR GERENTE DE MERCADO --- */}
+        {gerentesOrdenados?.length > 0 && (
+          <CollapsibleSection
+            title="Conformidade por Gerente de Mercado (2026)"
+            icon={<Users className="text-slate-400" size={20} />}
+          >
+            <div className="pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <SegmentedControl value={gmView} onChange={setGmView} options={gmOpcoes} />
+                <SegmentedControl
+                  value={gmEscala}
+                  onChange={setGmEscala}
+                  options={[
+                    { id: "pct", label: "Proporção" },
+                    { id: "valor", label: "Coletas" },
+                  ]}
+                />
+              </div>
+
+              <div className="mt-7">
+                <ResumoConformidade
+                  ok={totaisGm.ok}
+                  abaixo={totaisGm.abaixo}
+                  semNota={totaisGm.semNota}
+                  rotulo="coletas atribuídas a um gerente"
+                />
+              </div>
+
+              <div
+                className="mt-8"
+                style={{ height: gerentesOrdenados.length * 32 + 48 }}
+              >
+                <Bar
+                  data={buildConformidadeGmChart()}
+                  options={opcoesConformidadeGm}
+                  plugins={[stackTopLabelPlugin]}
+                />
+              </div>
+
+              <p className="text-xs text-slate-600 mt-4">
+                Ordenado da maior para a menor conformidade. Clique numa barra para abrir o
+                dossiê do gerente.
+                {conf?.gerentes?.sem_gerente > 0 &&
+                  ` ${fmtInt(conf.gerentes.sem_gerente)} coletas sem gerente informado na planilha ficaram fora deste gráfico.`}
+              </p>
+            </div>
+          </CollapsibleSection>
+        )}
 
         {/* --- 3. EVOLUÇÃO ANUAL DE PENDÊNCIAS --- */}
         <CollapsibleSection
@@ -1167,6 +1908,7 @@ export default function TelaGraficos() {
           <CollapsibleSection
             title="Pendências Abertas por Gerente de Mercado"
             icon={<UserX className="text-red-400" size={22} />}
+            badge="Clique na barra para ver as pendências"
           >
             <div style={{ height: Math.max(300, (data?.nao_conformidade_gm?.labels?.length || 5) * 40) }} className="mt-4">
               <Bar
@@ -1174,6 +1916,25 @@ export default function TelaGraficos() {
                 options={{
                   ...commonOptions,
                   indexAxis: 'y',
+                  onHover: (evt, elements) => {
+                    if (evt?.native?.target) {
+                      evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+                    }
+                  },
+                  onClick: (evt, elements, chart) => {
+                    if (!elements.length) return;
+                    abrirDossiePendencias(chart.data.labels[elements[0].index]);
+                  },
+                  plugins: {
+                    ...commonOptions.plugins,
+                    tooltip: {
+                      ...commonOptions.plugins.tooltip,
+                      callbacks: {
+                        label: (ctx) => `${ctx.raw} pendência(s) aberta(s)`,
+                        footer: () => 'Clique na barra para ver a lista'
+                      }
+                    }
+                  },
                   scales: {
                     x: { ...commonOptions.scales.y, beginAtZero: true, ticks: { ...commonOptions.scales.y.ticks, stepSize: 1 } },
                     y: { ticks: { color: "#cbd5e1", font: { size: 11 } }, grid: { display: false } }
@@ -1242,6 +2003,13 @@ export default function TelaGraficos() {
         {renderTopicSection("Bin Bebidas")}
 
       </div>
+
+      {/* Janela de dossiê (abre ao clicar numa coluna) */}
+      <DossieModal
+        key={dossie ? `${dossie.titulo}|${dossie.subtitulo}` : "vazio"}
+        dossie={dossie}
+        onClose={() => setDossie(null)}
+      />
     </div>
   );
 }

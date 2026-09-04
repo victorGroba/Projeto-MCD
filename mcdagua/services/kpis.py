@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import re
 import unicodedata
 
 def normalizar_texto(texto):
@@ -229,7 +230,7 @@ def get_nao_conformidade_por_gerente(df):
         
         if not col_pendencia or not col_gm:
             print("⚠️ [KPIs] Não Conformidade - Colunas pendencia/gm não encontradas")
-            return {"labels": [], "valores": []}
+            return {"labels": [], "valores": [], "detalhes": {}}
 
         df_work = df.copy()
         df_work['_pend_norm'] = df_work[col_pendencia].astype(str).str.lower().str.strip()
@@ -242,7 +243,7 @@ def get_nao_conformidade_por_gerente(df):
         print(f"📊 [KPIs] Pendências Abertas por GM - Total: {len(df_pendentes)} linhas")
         
         if df_pendentes.empty:
-            return {"labels": [], "valores": []}
+            return {"labels": [], "valores": [], "detalhes": {}}
         
         # Agrupa por gerente e conta
         contagem = df_pendentes[col_gm].astype(str).str.strip().value_counts()
@@ -251,6 +252,31 @@ def get_nao_conformidade_por_gerente(df):
         
         labels = [str(x) for x in contagem.index.tolist()]
         valores = [int(x) for x in contagem.values.tolist()]
+
+        # Detalhamento por gerente, para a janela que abre ao clicar na barra
+        col_sigla = encontrar_coluna(df, ['sigla', 'loja', 'restaurante'])
+        col_regional = encontrar_coluna(df, ['regional', 'regiao'])
+        col_mes = encontrar_coluna(df, ['mes'])
+        col_data = encontrar_coluna(df, ['data_coleta', 'data', 'dt_coleta'])
+        col_tipo = encontrar_coluna(df, ['tipo_de_coleta', 'tipo', 'servico'])
+        col_venc = encontrar_coluna(df, ['vencimento'])
+        col_consultor = encontrar_coluna(df, ['consultor'])
+
+        detalhes = {}
+        for _, linha in df_pendentes.iterrows():
+            gerente = str(linha[col_gm]).strip()
+            if not gerente:
+                continue
+            detalhes.setdefault(gerente, []).append({
+                "sigla": str(linha[col_sigla]).strip() if col_sigla else "",
+                "regional": str(linha[col_regional]).strip() if col_regional else "",
+                "mes": str(linha[col_mes]).strip() if col_mes else "",
+                "data": _formatar_data(linha[col_data]) if col_data else "",
+                "tipo": str(linha[col_tipo]).strip() if col_tipo else "",
+                "pendencia": str(linha[col_pendencia]).strip(),
+                "vencimento": _formatar_data(linha[col_venc]) if col_venc else "",
+                "consultor": str(linha[col_consultor]).strip() if col_consultor else "",
+            })
         
         # Debug: log completo
         print(f"📊 [KPIs] Não Conformidade - Total linhas com pendência: {len(df_pendentes)}")
@@ -259,8 +285,230 @@ def get_nao_conformidade_por_gerente(df):
         for l, v in zip(labels, valores):
             print(f"   → {l}: {v}")
         
-        return {"labels": labels, "valores": valores}
+        return {"labels": labels, "valores": valores, "detalhes": detalhes}
     except Exception as e:
         print(f"⚠️ [KPIs] Erro na Não Conformidade por Gerente: {e}")
         import traceback; traceback.print_exc()
-        return {"labels": [], "valores": []}
+        return {"labels": [], "valores": [], "detalhes": {}}
+
+
+# ==============================================================================
+# DOSSIÊ DE CONFORMIDADE (nota 100% x abaixo de 100%)
+# ==============================================================================
+
+MESES_MAP = {
+    "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3,
+    "abril": 4, "maio": 5, "junho": 6,
+    "julho": 7, "agosto": 8, "setembro": 9,
+    "outubro": 10, "novembro": 11, "dezembro": 12
+}
+
+MESES_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+                "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+# Agrupamento dos tipos de coleta (mesma regra do gráfico "Tipo de Coleta por Mês")
+GRUPOS_TIPO = {
+    "Coleta": ["cronograma", "coleta", "inauguração", "inauguracao"],
+    "Recoleta": ["recoleta"],
+    "Checklist": ["check list", "check list com coleta"],
+}
+
+# Agrupamento usado no gráfico por Gerente de Mercado
+GRUPOS_GM = {
+    "Cronograma/Inauguração": ["cronograma", "coleta", "inauguração", "inauguracao"],
+    "Recoleta": ["recoleta"],
+}
+
+VAZIOS = ("", "na", "nan", "none", "nat", "-")
+
+
+def _limpo(valor):
+    return str(valor).strip() if valor is not None else ""
+
+
+def classificar_conformidade(nota_raw, pendencia_raw):
+    """
+    Classifica uma coleta como '100' (verde) ou 'abaixo' (vermelho).
+
+    Regra:
+      1. Se a coluna 'nota' estiver preenchida com um número -> 100% somente se nota == 1
+         (aceita também 100 no lugar de 1).
+      2. Se a nota for 'na'/vazia (caso das recoletas, que não recebem nota),
+         cai para a coluna 'Pendência': 'ok' = 100%, qualquer pendência descrita = abaixo.
+      3. Sem nenhuma das duas informações -> None (fica de fora do cálculo).
+    """
+    nota = _limpo(nota_raw).lower().replace(",", ".")
+    if nota not in VAZIOS:
+        try:
+            valor = float(nota)
+            if valor > 1:  # tolera nota lançada como 100 / 90
+                valor = valor / 100.0
+            return "100" if valor >= 0.999 else "abaixo"
+        except ValueError:
+            pass
+
+    pend = _limpo(pendencia_raw).lower()
+    if pend in VAZIOS:
+        return None
+    return "100" if pend == "ok" else "abaixo"
+
+
+def _formatar_nota(nota_raw):
+    nota = _limpo(nota_raw).lower().replace(",", ".")
+    if nota in VAZIOS:
+        return "—"
+    try:
+        valor = float(nota)
+        if valor > 1:
+            valor = valor / 100.0
+        return f"{valor * 100:.0f}%"
+    except ValueError:
+        return _limpo(nota_raw)
+
+
+def _formatar_data(valor):
+    try:
+        dt = pd.to_datetime(valor, errors="coerce")
+        if pd.isna(dt):
+            return ""
+        return dt.strftime("%d/%m/%Y")
+    except Exception:
+        return ""
+
+
+def get_conformidade_dossie(df, ano=2026):
+    """
+    Monta a base do dossiê de conformidade usado em:
+      - Gráfico "Tipo de Coleta por Mês" (barras empilhadas 100% x abaixo de 100%)
+      - Gráfico "Conformidade por Gerente de Mercado"
+      - Janelas de detalhe (clique na coluna)
+
+    Retorna os agregados prontos para os gráficos + a lista plana de registros,
+    para o front filtrar e montar as tabelas dos modais sem recalcular nada.
+    """
+    vazio = {
+        "labels": [], "grupos": [], "tipo_coleta": {},
+        "gerentes": {"labels": [], "grupos": [], "dados": {}},
+        "registros": [],
+    }
+    try:
+        col_tipo = encontrar_coluna(df, ['tipo_de_coleta', 'tipo', 'servico'])
+        col_nota = encontrar_coluna(df, ['nota'])
+        col_pend = encontrar_coluna(df, ['pendencia', 'ocorrencia'])
+        col_gm = encontrar_coluna(df, ['gm', 'gerente', 'gerente_de_mercado'])
+        col_mes = encontrar_coluna(df, ['mes'])
+        col_data = encontrar_coluna(df, ['data_coleta', 'data', 'dt_coleta'])
+        col_sigla = encontrar_coluna(df, ['sigla', 'loja', 'restaurante'])
+        col_regional = encontrar_coluna(df, ['regional', 'regiao'])
+        col_consultor = encontrar_coluna(df, ['consultor'])
+
+        if not col_tipo or not col_nota:
+            print("[KPIs] Dossie - colunas 'tipo de coleta'/'nota' nao encontradas")
+            return vazio
+
+        dfw = df.copy()
+        dfw['_tipo_norm'] = dfw[col_tipo].astype(str).str.lower().str.strip()
+
+        # Filtra o ano pela coluna de data (mesma regra dos demais gráficos)
+        if col_data:
+            dfw['_data'] = pd.to_datetime(dfw[col_data], errors='coerce')
+            dfw = dfw[dfw['_data'].dt.year == ano]
+        else:
+            dfw['_data'] = pd.NaT
+
+        if col_mes:
+            dfw['_mes_num'] = dfw[col_mes].astype(str).str.lower().str.strip().map(MESES_MAP)
+        else:
+            dfw['_mes_num'] = dfw['_data'].dt.month
+        dfw['_mes_num'] = dfw['_mes_num'].fillna(dfw['_data'].dt.month)
+
+        registros = []
+        for _, linha in dfw.iterrows():
+            tipo = linha['_tipo_norm']
+
+            grupo = next((g for g, tipos in GRUPOS_TIPO.items() if tipo in tipos), None)
+            if grupo is None:
+                continue  # "não realizada", vazios e afins ficam de fora
+
+            grupo_gm = next((g for g, tipos in GRUPOS_GM.items() if tipo in tipos), None)
+
+            nota_raw = linha[col_nota] if col_nota else ""
+            pend_raw = linha[col_pend] if col_pend else ""
+            status = classificar_conformidade(nota_raw, pend_raw)
+
+            mes_num = linha['_mes_num']
+            mes_num = int(mes_num) if pd.notna(mes_num) else 0
+
+            registros.append({
+                "sigla": _limpo(linha[col_sigla]) if col_sigla else "",
+                "regional": _limpo(linha[col_regional]) if col_regional else "",
+                "gm": _limpo(linha[col_gm]) if col_gm else "",
+                "consultor": _limpo(linha[col_consultor]) if col_consultor else "",
+                "mes_num": mes_num,
+                "mes": MESES_LABELS[mes_num - 1] if 1 <= mes_num <= 12 else "",
+                "data": _formatar_data(linha['_data']),
+                "tipo": _limpo(linha[col_tipo]),
+                "grupo": grupo,
+                "grupo_gm": grupo_gm,
+                "nota": _formatar_nota(nota_raw),
+                "pendencia": _limpo(pend_raw) or "—",
+                "status": status or "sem_nota",
+            })
+
+        # --- Agregado 1: Tipo de Coleta por Mês ---
+        ultimo_mes = max([r["mes_num"] for r in registros], default=0)
+        if ultimo_mes == 0:
+            ultimo_mes = 6
+        labels = MESES_LABELS[:ultimo_mes]
+
+        tipo_coleta = {}
+        for grupo in GRUPOS_TIPO:
+            tipo_coleta[grupo] = {
+                "ok": [0] * ultimo_mes,
+                "abaixo": [0] * ultimo_mes,
+                "sem_nota": [0] * ultimo_mes,
+            }
+        for r in registros:
+            m = r["mes_num"]
+            if not (1 <= m <= ultimo_mes):
+                continue
+            chave = {"100": "ok", "abaixo": "abaixo"}.get(r["status"], "sem_nota")
+            tipo_coleta[r["grupo"]][chave][m - 1] += 1
+
+        # --- Agregado 2: Conformidade por Gerente de Mercado ---
+        # Descarta lixo de celula (ex.: "00:00:00" na coluna GM) - so entra o que
+        # tem ao menos uma letra, ou seja, um nome de gerente de verdade.
+        def _gerente_valido(nome):
+            return bool(nome) and nome.lower() not in VAZIOS and re.search(r"[^\W\d_]", nome, re.UNICODE)
+
+        gms = sorted({r["gm"] for r in registros if _gerente_valido(r["gm"])})
+        sem_gerente = sum(1 for r in registros if not _gerente_valido(r["gm"]))
+        grupos_gm = list(GRUPOS_GM.keys())
+        dados_gm = {
+            g: {"ok": [0] * len(gms), "abaixo": [0] * len(gms), "sem_nota": [0] * len(gms)}
+            for g in grupos_gm
+        }
+        idx_gm = {gm: i for i, gm in enumerate(gms)}
+        for r in registros:
+            if not r["grupo_gm"] or r["gm"] not in idx_gm:
+                continue
+            chave = {"100": "ok", "abaixo": "abaixo"}.get(r["status"], "sem_nota")
+            dados_gm[r["grupo_gm"]][chave][idx_gm[r["gm"]]] += 1
+
+        total_ok = sum(1 for r in registros if r["status"] == "100")
+        total_abaixo = sum(1 for r in registros if r["status"] == "abaixo")
+        print(f"[KPIs] Dossie Conformidade - {len(registros)} registros | "
+              f"100%: {total_ok} | abaixo: {total_abaixo}")
+
+        return {
+            "labels": labels,
+            "grupos": list(GRUPOS_TIPO.keys()),
+            "tipo_coleta": tipo_coleta,
+            "gerentes": {"labels": gms, "grupos": grupos_gm, "dados": dados_gm,
+                         "sem_gerente": sem_gerente},
+            "registros": registros,
+        }
+    except Exception as e:
+        print(f"[KPIs] Erro no Dossie de Conformidade: {e}")
+        import traceback; traceback.print_exc()
+        return vazio

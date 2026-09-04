@@ -18,7 +18,8 @@ from mcdagua.services.excel_processor import (
 from mcdagua.services.kpis import (
     get_programado_realizado, 
     get_tipo_coleta_por_mes, 
-    get_nao_conformidade_por_gerente
+    get_nao_conformidade_por_gerente,
+    get_conformidade_dossie
 )
 from mcdagua.services.appcc_processor import (
     processar_microorganismos,
@@ -76,6 +77,16 @@ def graficos_data():
         response_data["programado_realizado"] = get_programado_realizado(df_geral)
         response_data["tipo_coleta"] = get_tipo_coleta_por_mes(df_geral)
         response_data["nao_conformidade_gm"] = get_nao_conformidade_por_gerente(df_geral)
+
+        # NOVO: dossiê de conformidade (nota 100% x abaixo de 100%)
+        try:
+            response_data["conformidade"] = get_conformidade_dossie(df_geral)
+        except Exception as e:
+            print(f"⚠️ [CONFORMIDADE] Erro: {e}")
+            response_data["conformidade"] = {
+                "labels": [], "grupos": [], "tipo_coleta": {},
+                "gerentes": {"labels": [], "grupos": [], "dados": {}}, "registros": []
+            }
         
         # NOVO: Back Room conformidade mensal (coluna I)
         try:
