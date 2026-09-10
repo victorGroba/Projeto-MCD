@@ -19,7 +19,8 @@ from mcdagua.services.kpis import (
     get_programado_realizado, 
     get_tipo_coleta_por_mes, 
     get_nao_conformidade_por_gerente,
-    get_conformidade_dossie
+    get_conformidade_dossie,
+    get_coleta_recoleta
 )
 from mcdagua.services.appcc_processor import (
     processar_microorganismos,
@@ -77,6 +78,17 @@ def graficos_data():
         response_data["programado_realizado"] = get_programado_realizado(df_geral)
         response_data["tipo_coleta"] = get_tipo_coleta_por_mes(df_geral)
         response_data["nao_conformidade_gm"] = get_nao_conformidade_por_gerente(df_geral)
+
+        # NOVO: gráfico unificado Coleta x Recoleta + painel por gerente
+        try:
+            response_data["coleta_recoleta"] = get_coleta_recoleta(df_geral)
+        except Exception as e:
+            print(f"⚠️ [COLETA x RECOLETA] Erro: {e}")
+            response_data["coleta_recoleta"] = {
+                "labels": {"mensal": [], "semestral": []},
+                "series": {"mensal": {}, "semestral": {}},
+                "gerentes": {"labels": [], "mensal": {}, "semestral": {}},
+            }
 
         # NOVO: dossiê de conformidade (nota 100% x abaixo de 100%)
         try:

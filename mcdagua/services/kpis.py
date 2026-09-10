@@ -401,6 +401,7 @@ def get_conformidade_dossie(df, ano=2026):
         col_sigla = encontrar_coluna(df, ['sigla', 'loja', 'restaurante'])
         col_regional = encontrar_coluna(df, ['regional', 'regiao'])
         col_consultor = encontrar_coluna(df, ['consultor'])
+        col_visita = encontrar_coluna(df, ['visita'])
 
         if not col_tipo or not col_nota:
             print("[KPIs] Dossie - colunas 'tipo de coleta'/'nota' nao encontradas")
@@ -453,6 +454,12 @@ def get_conformidade_dossie(df, ano=2026):
                 "nota": _formatar_nota(nota_raw),
                 "pendencia": _limpo(pend_raw) or "—",
                 "status": status or "sem_nota",
+                # usados pelo mapa Coleta x Recoleta e pelos sub-modais de datas
+                "visita": int(pd.to_numeric(linha[col_visita], errors="coerce"))
+                          if col_visita and pd.notna(pd.to_numeric(linha[col_visita], errors="coerce"))
+                          else (1 if grupo == "Coleta" else 2),
+                "data_iso": linha['_data'].strftime("%Y-%m-%d") if pd.notna(linha['_data']) else "",
+                "semestre": SEMESTRE_LABELS.get(_semestre_do_mes(mes_num), ""),
             })
 
         # --- Agregado 1: Tipo de Coleta por Mês ---
@@ -510,5 +517,228 @@ def get_conformidade_dossie(df, ano=2026):
         }
     except Exception as e:
         print(f"[KPIs] Erro no Dossie de Conformidade: {e}")
+        import traceback; traceback.print_exc()
+        return vazio
+
+
+# ==============================================================================
+# COLETA x RECOLETA — gráfico unificado, painel por gerente e saldo de pendências
+# ==============================================================================
+
+SEMESTRE_LABELS = {1: "1º semestre", 2: "2º semestre"}
+
+
+def _semestre_do_mes(mes_num):
+    return 1 if 1 <= mes_num <= 6 else 2
+
+
+def _fim_do_mes(ano, mes_num):
+    if mes_num == 12:
+        return pd.Timestamp(year=ano + 1, month=1, day=1) - pd.Timedelta(seconds=1)
+    return pd.Timestamp(year=ano, month=mes_num + 1, day=1) - pd.Timedelta(seconds=1)
+
+
+def _reconstruir_ciclos(dfw, col_sigla, col_gm, col_pend, ano):
+    """
+    Reconstrói o histórico de pendências.
+
+    A coluna "Pendência" da planilha guarda o estado ATUAL da visita, não o
+    histórico: quando a pendência é resolvida ela vira "ok". Por isso o saldo
+    "no fechamento do mês" não pode ser lido direto da coluna — ele é
+    reconstruído pela cadeia de visitas de cada loja:
+
+      - um ciclo começa a cada visita nº 1 (a coleta de cronograma);
+      - se essa 1ª visita foi reprovada (nota < 100%), abre uma pendência na
+        data dela;
+      - a pendência encerra na data da última visita do ciclo, a menos que essa
+        última visita ainda esteja com pendência aberta hoje.
+
+    Assim um gerente que fez 10 recoletas no mês e resolveu tudo fecha o mês com
+    saldo zero, sem que o esforço das recoletas desapareça do painel.
+    """
+    ciclos = []
+    for _, grupo in dfw.groupby([col_sigla, "_ciclo"], sort=False):
+        grupo = grupo.sort_values("_data")
+        primeira = grupo.iloc[0]
+        if primeira["_status_1a"] != "reprovado":
+            continue  # só coleta reprovada abre pendência
+        ultima = grupo.iloc[-1]
+        pend_atual = _limpo(ultima[col_pend]).lower() if col_pend else ""
+        # "ok" = resolvida; vazio/na = sem pendência registrada
+        aberta_hoje = pend_atual not in VAZIOS and pend_atual != "ok"
+        ciclos.append({
+            "gm": _limpo(primeira[col_gm]) if col_gm else "",
+            "sigla": _limpo(primeira[col_sigla]),
+            "abertura": primeira["_data"],
+            "encerramento": pd.NaT if aberta_hoje else ultima["_data"],
+            "visitas": int(len(grupo)),
+        })
+    return pd.DataFrame(ciclos, columns=["gm", "sigla", "abertura", "encerramento", "visitas"])
+
+
+def get_coleta_recoleta(df, ano=2026):
+    """
+    Base do gráfico unificado Coleta x Recoleta e do painel por gerente.
+
+    Gráfico unificado, por período:
+      - barra de Coleta (1ª visita): aprovado (nota 100%) x reprovado
+      - barra de Recoleta: apenas o quantitativo total, sem divisão
+
+    Painel por gerente, por período (3 métricas lado a lado):
+      - reprovações na 1ª coleta
+      - total de recoletas
+      - saldo de pendências em aberto no fechamento do período
+    """
+    vazio = {
+        "labels": {"mensal": [], "semestral": []},
+        "series": {"mensal": {}, "semestral": {}},
+        "gerentes": {"labels": [], "mensal": {}, "semestral": {}},
+    }
+    try:
+        col_tipo = encontrar_coluna(df, ['tipo_de_coleta', 'tipo', 'servico'])
+        col_nota = encontrar_coluna(df, ['nota'])
+        col_pend = encontrar_coluna(df, ['pendencia', 'ocorrencia'])
+        col_gm = encontrar_coluna(df, ['gm', 'gerente', 'gerente_de_mercado'])
+        col_data = encontrar_coluna(df, ['data_coleta', 'data', 'dt_coleta'])
+        col_sigla = encontrar_coluna(df, ['sigla', 'loja', 'restaurante'])
+        col_visita = encontrar_coluna(df, ['visita'])
+
+        if not col_tipo or not col_data or not col_sigla:
+            print("[KPIs] Coleta x Recoleta - colunas essenciais nao encontradas")
+            return vazio
+
+        dfw = df.copy()
+        dfw["_data"] = pd.to_datetime(dfw[col_data], errors="coerce")
+        dfw = dfw[dfw["_data"].notna() & (dfw["_data"].dt.year == ano)]
+        if dfw.empty:
+            return vazio
+
+        dfw["_tipo_norm"] = dfw[col_tipo].astype(str).str.lower().str.strip()
+        dfw["_grupo"] = dfw["_tipo_norm"].map(
+            lambda t: next((g for g, tipos in GRUPOS_TIPO.items() if t in tipos), None)
+        )
+        dfw = dfw[dfw["_grupo"].notna()]
+
+        dfw["_mes"] = dfw["_data"].dt.month
+        dfw["_sem"] = dfw["_mes"].map(_semestre_do_mes)
+
+        # Status da 1ª visita: aprovado só com nota 100%
+        def _classificar_primeira(linha):
+            if linha["_grupo"] != "Coleta":
+                return None
+            st = classificar_conformidade(
+                linha[col_nota] if col_nota else "",
+                linha[col_pend] if col_pend else "",
+            )
+            if st == "100":
+                return "aprovado"
+            if st == "abaixo":
+                return "reprovado"
+            return "sem_nota"
+
+        dfw["_status_1a"] = dfw.apply(_classificar_primeira, axis=1)
+
+        if col_visita:
+            dfw["_visita"] = pd.to_numeric(dfw[col_visita], errors="coerce").fillna(1).astype(int)
+        else:
+            dfw["_visita"] = dfw["_grupo"].map(lambda g: 1 if g == "Coleta" else 2)
+
+        dfw = dfw.sort_values([col_sigla, "_data"])
+        dfw["_ciclo"] = dfw.groupby(col_sigla)["_visita"].transform(
+            lambda s: (s == 1).cumsum()
+        )
+
+        ciclos = _reconstruir_ciclos(dfw, col_sigla, col_gm, col_pend, ano)
+
+        # ---------- Séries do gráfico unificado ----------
+        meses_presentes = sorted(dfw["_mes"].unique())
+        labels_mensal = [MESES_LABELS[m - 1] for m in meses_presentes]
+        sems_presentes = sorted(dfw["_sem"].unique())
+        labels_semestral = [SEMESTRE_LABELS[s] for s in sems_presentes]
+
+        def _series(chave, valores):
+            aprovado, reprovado, recoleta = [], [], []
+            for v in valores:
+                bloco = dfw[dfw[chave] == v]
+                primeira = bloco[bloco["_grupo"] == "Coleta"]
+                aprovado.append(int((primeira["_status_1a"] == "aprovado").sum()))
+                reprovado.append(int((primeira["_status_1a"] == "reprovado").sum()))
+                recoleta.append(int((bloco["_grupo"] == "Recoleta").sum()))
+            return {"aprovado": aprovado, "reprovado": reprovado, "recoleta": recoleta}
+
+        # ---------- Painel por gerente ----------
+        def _gerente_valido(nome):
+            return bool(nome) and nome.lower() not in VAZIOS and re.search(r"[^\W\d_]", nome, re.UNICODE)
+
+        dfw["_gm"] = dfw[col_gm].astype(str).str.strip() if col_gm else ""
+        gms = sorted({g for g in dfw["_gm"].unique() if _gerente_valido(g)})
+        idx_gm = {g: i for i, g in enumerate(gms)}
+
+        def _painel(chave, valores, fim_de):
+            saida = {}
+            for v in valores:
+                bloco = dfw[dfw[chave] == v]
+                reprov = [0] * len(gms)
+                recol = [0] * len(gms)
+                pend = [0] * len(gms)
+                detalhe = {}
+
+                primeira = bloco[(bloco["_grupo"] == "Coleta") & (bloco["_status_1a"] == "reprovado")]
+                for g, qtd in primeira["_gm"].value_counts().items():
+                    if g in idx_gm:
+                        reprov[idx_gm[g]] = int(qtd)
+
+                recs = bloco[bloco["_grupo"] == "Recoleta"]
+                for g, qtd in recs["_gm"].value_counts().items():
+                    if g in idx_gm:
+                        recol[idx_gm[g]] = int(qtd)
+
+                # saldo em aberto no último instante do período
+                if not ciclos.empty:
+                    fim = fim_de(v)
+                    em_aberto = ciclos[
+                        (ciclos["abertura"] <= fim)
+                        & (ciclos["encerramento"].isna() | (ciclos["encerramento"] > fim))
+                    ]
+                    for g, qtd in em_aberto["gm"].value_counts().items():
+                        if g in idx_gm:
+                            pend[idx_gm[g]] = int(qtd)
+                    for _, linha in em_aberto.iterrows():
+                        if linha["gm"] in idx_gm:
+                            detalhe.setdefault(linha["gm"], []).append({
+                                "sigla": linha["sigla"],
+                                "abertura": linha["abertura"].strftime("%d/%m/%Y"),
+                                "dias_em_aberto": int((fim - linha["abertura"]).days),
+                                "visitas": int(linha["visitas"]),
+                            })
+
+                rotulo = (MESES_LABELS[v - 1] if chave == "_mes" else SEMESTRE_LABELS[v])
+                saida[rotulo] = {
+                    "reprovacoes": reprov, "recoletas": recol,
+                    "pendentes": pend, "pendentes_detalhe": detalhe,
+                }
+            return saida
+
+        resultado = {
+            "labels": {"mensal": labels_mensal, "semestral": labels_semestral},
+            "series": {
+                "mensal": _series("_mes", meses_presentes),
+                "semestral": _series("_sem", sems_presentes),
+            },
+            "gerentes": {
+                "labels": gms,
+                "mensal": _painel("_mes", meses_presentes, lambda m: _fim_do_mes(ano, m)),
+                "semestral": _painel(
+                    "_sem", sems_presentes,
+                    lambda s: _fim_do_mes(ano, 6 if s == 1 else 12),
+                ),
+            },
+        }
+
+        print(f"[KPIs] Coleta x Recoleta - {len(labels_mensal)} meses, {len(gms)} gerentes, "
+              f"{len(ciclos)} ciclos com reprovacao ({int(ciclos['encerramento'].isna().sum()) if not ciclos.empty else 0} ainda abertos)")
+        return resultado
+    except Exception as e:
+        print(f"[KPIs] Erro em Coleta x Recoleta: {e}")
         import traceback; traceback.print_exc()
         return vazio

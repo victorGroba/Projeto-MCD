@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Line, Bar } from "react-chartjs-2";
 import { api } from "../api/api";
-import { ArrowLeft, RefreshCw, BarChart2, Target, AlertTriangle, List, UserX, Users, ChevronDown, ChevronUp, Filter, X, Download } from "lucide-react";
+import { ArrowLeft, RefreshCw, BarChart2, Target, AlertTriangle, List, UserX, Users, ChevronDown, ChevronUp, Filter, X, Download, CalendarDays } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   Chart as ChartJS,
@@ -161,6 +161,8 @@ function CollapsibleSection({ title, icon, badge, defaultOpen = true, children }
 const VIZ = {
   ok: "#34d399",
   abaixo: "#e05252",
+  recoleta: "#4d9bf0",
+  pendente: "#f0b429",
   semNota: "#7c8899",
   surface: "#0f172a",
   grid: "#1e293b",
@@ -169,13 +171,10 @@ const VIZ = {
   inkFaint: "#64748b",
 };
 
-const STATUS_VIZ = [
-  { chave: "ok", status: "100", label: "Nota 100%", cor: VIZ.ok },
-  { chave: "abaixo", status: "abaixo", label: "Abaixo de 100%", cor: VIZ.abaixo },
-  { chave: "sem_nota", status: "sem_nota", label: "Sem nota", cor: VIZ.semNota },
-];
-
 const FONTE_VIZ = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+                      "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 const fmtInt = (n) => new Intl.NumberFormat("pt-BR").format(Math.round(n || 0));
 const fmtPct = (n, casas = 1) =>
@@ -192,57 +191,65 @@ function nomeCurto(nome) {
   return `${titulo(partes[0])} ${titulo(partes[partes.length - 1])}`;
 }
 
-// Rótulo direto no topo (ou na ponta) de cada pilha — um por coluna, nunca por segmento
+// Rótulo direto na ponta de cada barra — um por barra, nunca por segmento.
+// `_topLabels` é um mapa { nomeDoStack: [rótulo por categoria] }, para que um
+// gráfico com duas barras lado a lado (coleta e recoleta) rotule cada uma.
 const stackTopLabelPlugin = {
   id: "stackTopLabel",
   afterDatasetsDraw(chart) {
-    const rotulos = chart.options?._topLabels;
-    if (!rotulos) return;
+    const mapa = chart.options?._topLabels;
+    if (!mapa) return;
     const { ctx } = chart;
     const horizontal = chart.options?.indexAxis === "y";
 
-    chart.data.labels.forEach((_, i) => {
-      if (rotulos[i] == null) return;
-      let ponta = null;
-      let coord = null;
-      chart.data.datasets.forEach((ds, di) => {
-        const meta = chart.getDatasetMeta(di);
-        if (meta.hidden) return;
-        const el = meta.data[i];
-        if (!el || !((Number(ds.data[i]) || 0) > 0)) return;
-        if (horizontal) {
-          ponta = ponta === null ? el.x : Math.max(ponta, el.x);
-          coord = el.y;
-        } else {
-          ponta = ponta === null ? el.y : Math.min(ponta, el.y);
-          coord = el.x;
+    Object.entries(mapa).forEach(([stack, rotulos]) => {
+      if (!Array.isArray(rotulos)) return;
+
+      chart.data.labels.forEach((_, i) => {
+        const item = rotulos[i];
+        if (item == null) return;
+
+        let ponta = null;
+        let coord = null;
+        chart.data.datasets.forEach((ds, di) => {
+          if ((ds.stack ?? ds.label) !== stack) return;
+          const meta = chart.getDatasetMeta(di);
+          if (meta.hidden) return;
+          const el = meta.data[i];
+          if (!el || !((Number(ds.data[i]) || 0) > 0)) return;
+          if (horizontal) {
+            ponta = ponta === null ? el.x : Math.max(ponta, el.x);
+            coord = el.y;
+          } else {
+            ponta = ponta === null ? el.y : Math.min(ponta, el.y);
+            coord = el.x;
+          }
+        });
+        if (ponta === null) return;
+
+        const principal = typeof item === "string" ? item : item.principal;
+        const secundario = typeof item === "string" ? null : item.secundario;
+
+        ctx.save();
+        ctx.textBaseline = horizontal ? "middle" : "bottom";
+        ctx.textAlign = horizontal ? "left" : "center";
+        const x = horizontal ? ponta + 12 : coord;
+        const y = horizontal ? coord : ponta - 9;
+
+        ctx.fillStyle = VIZ.ink;
+        ctx.font = `600 12px ${FONTE_VIZ}`;
+        ctx.fillText(principal, x, y);
+
+        // O denominador impede que uma proporção sobre poucos casos
+        // pareça equivalente a uma sobre centenas
+        if (secundario) {
+          const larg = ctx.measureText(principal).width;
+          ctx.fillStyle = VIZ.inkFaint;
+          ctx.font = `400 11px ${FONTE_VIZ}`;
+          ctx.fillText(secundario, x + larg + 6, y);
         }
+        ctx.restore();
       });
-      if (ponta === null) return;
-
-      const item = rotulos[i];
-      const principal = typeof item === "string" ? item : item.principal;
-      const secundario = typeof item === "string" ? null : item.secundario;
-
-      ctx.save();
-      ctx.textBaseline = horizontal ? "middle" : "bottom";
-      ctx.textAlign = horizontal ? "left" : "center";
-      const x = horizontal ? ponta + 12 : coord;
-      const y = horizontal ? coord : ponta - 9;
-
-      ctx.fillStyle = VIZ.ink;
-      ctx.font = `600 12px ${FONTE_VIZ}`;
-      ctx.fillText(principal, x, y);
-
-      // O denominador impede que uma proporção sobre poucos casos
-      // pareça equivalente a uma sobre centenas
-      if (secundario) {
-        const larg = ctx.measureText(principal).width;
-        ctx.fillStyle = VIZ.inkFaint;
-        ctx.font = `400 11px ${FONTE_VIZ}`;
-        ctx.fillText(secundario, x + larg + 6, y);
-      }
-      ctx.restore();
     });
   },
 };
@@ -520,6 +527,209 @@ function DossieModal({ dossie, onClose }) {
   );
 }
 
+// --- Sub-modal: datas exatas de recoletas / visitas de uma loja ---
+function SubModalDatas({ info, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!info) return null;
+  const { titulo, subtitulo, itens = [] } = info;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-slate-800">
+          <div className="min-w-0">
+            <h4 className="text-base font-semibold text-slate-50">{titulo}</h4>
+            {subtitulo && <p className="text-xs text-slate-500 mt-0.5">{subtitulo}</p>}
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 -mr-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors shrink-0"
+            aria-label="Fechar"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <ul className="flex-1 overflow-auto px-6 py-3">
+          {itens.length === 0 && (
+            <li className="py-6 text-center text-sm text-slate-600">Nenhuma data registrada.</li>
+          )}
+          {itens.map((it, i) => (
+            <li
+              key={`${it.data}-${i}`}
+              className="flex items-center justify-between gap-4 py-2.5 border-b border-slate-800/60 last:border-0"
+            >
+              <span className="inline-flex items-center gap-2.5">
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ background: it.cor || VIZ.recoleta }}
+                />
+                <span className="text-sm text-slate-200 tabular-nums">{it.data}</span>
+              </span>
+              {it.rotulo && <span className="text-xs text-slate-500">{it.rotulo}</span>}
+            </li>
+          ))}
+        </ul>
+        <div className="px-6 py-3 border-t border-slate-800 text-xs text-slate-500">
+          {fmtInt(itens.length)} {itens.length === 1 ? "registro" : "registros"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Modal de detalhamento das recoletas do período (ranking por loja) ---
+function ModalRecoletas({ dados, onClose, onVerDatas }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!dados) return null;
+  const { periodo, semestre, linhas = [] } = dados;
+
+  const totalRecoletas = linhas.reduce((a, l) => a + l.qtd, 0);
+
+  const exportarCsv = () => {
+    const sep = ";";
+    const cab = ["Sigla", "Regional", "Mês", "Qtd. Recoletas no Mês", "Total de Visitas"].join(sep);
+    const corpo = linhas
+      .map((l) => [l.sigla, l.regional, l.periodo, l.qtd, l.totalVisitas].join(sep))
+      .join("\n");
+    const blob = new Blob(["﻿" + cab + "\n" + corpo], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `recoletas-${String(periodo).toLowerCase().replace(/[^a-z0-9]+/gi, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 px-7 pt-6 pb-5">
+          <div className="min-w-0">
+            <h3 className="text-xl font-semibold text-slate-50">Recoletas · {periodo}</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Lojas com maior incidência no topo · total de visitas acumulado no {semestre}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 -mr-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors shrink-0"
+            aria-label="Fechar"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-8 px-7 pb-5">
+          <div>
+            <p className="text-[32px] leading-none font-semibold text-slate-50 tabular-nums">
+              {fmtInt(totalRecoletas)}
+            </p>
+            <p className="text-xs text-slate-400 mt-1.5">recoletas no período</p>
+          </div>
+          <div>
+            <p className="text-[32px] leading-none font-semibold text-slate-50 tabular-nums">
+              {fmtInt(linhas.length)}
+            </p>
+            <p className="text-xs text-slate-400 mt-1.5">lojas envolvidas</p>
+          </div>
+          <button
+            onClick={exportarCsv}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 border border-slate-700 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <Download size={13} /> Exportar CSV
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto border-t border-slate-800">
+          <table className="w-full text-[13px]">
+            <thead className="sticky top-0 bg-slate-900 z-10">
+              <tr className="border-b border-slate-800">
+                {["Sigla", "Regional", "Mês"].map((h) => (
+                  <th key={h} className="text-left font-medium text-[11px] uppercase tracking-wider text-slate-500 py-3 px-3 first:pl-7 whitespace-nowrap">
+                    {h}
+                  </th>
+                ))}
+                <th className="text-right font-medium text-[11px] uppercase tracking-wider text-slate-500 py-3 px-3 whitespace-nowrap">
+                  Qtd. Recoletas no Mês
+                </th>
+                <th className="text-right font-medium text-[11px] uppercase tracking-wider text-slate-500 py-3 px-3 pr-7 whitespace-nowrap">
+                  Total de Visitas
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center text-slate-600">
+                    Nenhuma recoleta neste período.
+                  </td>
+                </tr>
+              )}
+              {linhas.map((l) => (
+                <tr key={l.sigla} className="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
+                  <td className="py-2.5 px-3 pl-7 font-medium text-slate-100">{l.sigla}</td>
+                  <td className="py-2.5 px-3 text-slate-400">{l.regional || "—"}</td>
+                  <td className="py-2.5 px-3 text-slate-400">{l.periodo}</td>
+                  <td className="py-2.5 px-3 text-right">
+                    <button
+                      onClick={() => onVerDatas({
+                        titulo: `${l.sigla} · recoletas em ${l.periodo}`,
+                        subtitulo: "Datas em que houve recoleta",
+                        itens: l.datasRecoletas.map((d) => ({ data: d, cor: VIZ.recoleta })),
+                      })}
+                      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md tabular-nums font-semibold text-slate-100 hover:bg-slate-700/60 transition-colors"
+                      title="Ver as datas das recoletas"
+                    >
+                      {l.qtd}
+                      <CalendarDays size={12} className="text-slate-500" />
+                    </button>
+                  </td>
+                  <td className="py-2.5 px-3 pr-7 text-right">
+                    <button
+                      onClick={() => onVerDatas({
+                        titulo: `${l.sigla} · visitas no ${semestre}`,
+                        subtitulo: "Coletas e recoletas acumuladas no semestre",
+                        itens: l.datasVisitas,
+                      })}
+                      className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md tabular-nums text-slate-300 hover:bg-slate-700/60 transition-colors"
+                      title="Ver as datas de todas as visitas do semestre"
+                    >
+                      {l.totalVisitas}
+                      <CalendarDays size={12} className="text-slate-500" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TelaGraficos() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -527,10 +737,10 @@ export default function TelaGraficos() {
   const [selectedMonth, setSelectedMonth] = useState(""); // Filtro mês para regional backroom
   const [selectedMonthGelo, setSelectedMonthGelo] = useState(""); // Filtro mês para regional gelo pool
   const [dossie, setDossie] = useState(null); // Janela de detalhe (dossiê de conformidade)
-  const [tipoView, setTipoView] = useState("Coleta");        // série do gráfico de tipo de coleta
-  const [tipoEscala, setTipoEscala] = useState("valor");     // "valor" | "pct"
-  const [gmView, setGmView] = useState("Todas");             // recorte do gráfico por gerente
-  const [gmEscala, setGmEscala] = useState("pct");           // "valor" | "pct"
+  const [periodoModo, setPeriodoModo] = useState("mensal");  // seletor global: "mensal" | "semestral"
+  const [gmPeriodo, setGmPeriodo] = useState(null);          // período exibido no painel por gerente
+  const [modalRecoleta, setModalRecoleta] = useState(null);  // ranking de lojas por recoleta
+  const [subDatas, setSubDatas] = useState(null);            // datas exatas de uma loja
 
   const fetchData = () => {
     setLoading(true);
@@ -568,36 +778,6 @@ export default function TelaGraficos() {
       datasets: [
         { label: "Programado", data: apiData.programado, backgroundColor: "#8b5cf6", borderRadius: 4 },
         { label: "Realizado", data: apiData.realizado, backgroundColor: "#10b981", borderRadius: 4 }
-      ]
-    };
-  };
-
-  // --- 2. Tipo de Coleta por Mês ---
-  const buildTipoColetaChart = (apiData) => {
-    if (!apiData) return { labels: [], datasets: [] };
-    return {
-      labels: apiData.labels,
-      datasets: [
-        { label: "Coleta", data: apiData.coleta, backgroundColor: "#3b82f6", borderRadius: 4 },
-        { label: "Recoleta", data: apiData.recoleta, backgroundColor: "#f97316", borderRadius: 4 },
-        { label: "Checklist", data: apiData.checklist, backgroundColor: "#94a3b8", borderRadius: 4 }
-      ]
-    };
-  };
-
-  // --- 3. Não Conformidade por Gerente ---
-  const buildNaoConformidadeChart = (apiData) => {
-    if (!apiData || !apiData.labels) return { labels: [], datasets: [] };
-    return {
-      labels: apiData.labels,
-      datasets: [
-        {
-          label: "Pendências",
-          data: apiData.valores,
-          backgroundColor: "#ef4444",
-          borderRadius: 4,
-          barThickness: 22
-        }
       ]
     };
   };
@@ -1224,110 +1404,11 @@ export default function TelaGraficos() {
   };
 
   // ====================================================================
-  // DOSSIÊ DE CONFORMIDADE (nota 100% x abaixo de 100%)
+  // BASE DO DOSSIÊ (registros usados pelas janelas de detalhe)
   // ====================================================================
   const conf = data?.conformidade;
   const registrosConf = conf?.registros || [];
   const _soma = (arr) => (arr || []).reduce((a, b) => a + (Number(b) || 0), 0);
-
-  // --- Tipo de coleta: uma série por vez, escolhida no controle segmentado ---
-  const gruposComDados = (conf?.grupos || []).filter((g) => {
-    const d = conf?.tipo_coleta?.[g];
-    return d && _soma(d.ok) + _soma(d.abaixo) + _soma(d.sem_nota) > 0;
-  });
-  const tipoAtual = gruposComDados.includes(tipoView) ? tipoView : gruposComDados[0];
-  const dadosTipo = conf?.tipo_coleta?.[tipoAtual];
-
-  const totaisMes = (conf?.labels || []).map((_, i) =>
-    dadosTipo ? dadosTipo.ok[i] + dadosTipo.abaixo[i] + dadosTipo.sem_nota[i] : 0
-  );
-
-  const _montarDatasets = (fonte, totais, escala, horizontal) =>
-    STATUS_VIZ.filter((s) => _soma(fonte[s.chave]) > 0).map((s) => ({
-      label: s.label,
-      data:
-        escala === "pct"
-          ? fonte[s.chave].map((v, i) => (totais[i] ? (v / totais[i]) * 100 : 0))
-          : fonte[s.chave].slice(),
-      _abs: fonte[s.chave],
-      _status: s.status,
-      backgroundColor: s.cor,
-      borderColor: VIZ.surface, // gap de 2px entre segmentos, em vez de contorno
-      // sem borda quando o segmento é zero, senão sobra um traço de 2px no gráfico
-      borderWidth: (ctx) => ((Number(ctx.dataset.data[ctx.dataIndex]) || 0) > 0 ? 2 : 0),
-      borderRadius: 3,
-      borderSkipped: false,
-      barPercentage: horizontal ? 0.58 : 0.52,
-      categoryPercentage: 0.8,
-      stack: "conformidade",
-    }));
-
-  const buildTipoColetaChart2 = () => {
-    if (!dadosTipo) return null;
-    return {
-      labels: conf.labels,
-      datasets: _montarDatasets(dadosTipo, totaisMes, tipoEscala, false),
-    };
-  };
-
-  // O secundário é o nº de coletas com nota: sem ele, um mês com 14 avaliadas
-  // exibiria o mesmo "79%" de um mês com 200
-  const rotulosTopoMes = (conf?.labels || []).map((_, i) => {
-    if (!dadosTipo) return null;
-    const base = dadosTipo.ok[i] + dadosTipo.abaixo[i];
-    if (!base) return null;
-    return {
-      principal: fmtPct((dadosTipo.ok[i] / base) * 100, 0),
-      secundario: base < totaisMes[i] ? `/${fmtInt(base)}` : null,
-    };
-  });
-
-  // --- Gerentes: soma dos grupos escolhidos, ordenado por conformidade ---
-  const gmOpcoes = [
-    { id: "Todas", label: "Todas" },
-    ...(conf?.gerentes?.grupos || []).map((g) => ({
-      id: g,
-      label: g === "Cronograma/Inauguração" ? "Cronograma" : g,
-    })),
-  ];
-
-  const gerentesOrdenados = (() => {
-    const g = conf?.gerentes;
-    if (!g?.labels?.length) return null;
-    const grupos = gmView === "Todas" ? g.grupos : [gmView];
-    const linhas = g.labels.map((nome, i) => {
-      const acc = { ok: 0, abaixo: 0, sem_nota: 0 };
-      grupos.forEach((gr) => {
-        const d = g.dados[gr];
-        if (!d) return;
-        acc.ok += d.ok[i] || 0;
-        acc.abaixo += d.abaixo[i] || 0;
-        acc.sem_nota += d.sem_nota[i] || 0;
-      });
-      const base = acc.ok + acc.abaixo;
-      return { nome, ...acc, total: base + acc.sem_nota, pct: base > 0 ? (acc.ok / base) * 100 : -1 };
-    });
-    return linhas.filter((l) => l.total > 0).sort((a, b) => b.pct - a.pct);
-  })();
-
-  const buildConformidadeGmChart = () => {
-    if (!gerentesOrdenados?.length) return null;
-    const fonte = {
-      ok: gerentesOrdenados.map((l) => l.ok),
-      abaixo: gerentesOrdenados.map((l) => l.abaixo),
-      sem_nota: gerentesOrdenados.map((l) => l.sem_nota),
-    };
-    const totais = gerentesOrdenados.map((l) => l.total);
-    return {
-      labels: gerentesOrdenados.map((l) => nomeCurto(l.nome)),
-      datasets: _montarDatasets(fonte, totais, gmEscala, true),
-    };
-  };
-
-  const rotulosGm = (gerentesOrdenados || []).map((l) => ({
-    principal: l.pct >= 0 ? fmtPct(l.pct, 0) : "—",
-    secundario: fmtInt(l.total),
-  }));
 
   // --- Opções compartilhadas dos dois gráficos ---
   const _opcoesViz = ({ horizontal, escala, rotulos, nomesCompletos, aoClicar }) => {
@@ -1372,8 +1453,15 @@ export default function TelaGraficos() {
         }
       },
       onClick: (evt, elements, chart) => {
-        if (!elements.length) return;
-        aoClicar(chart.data.datasets[elements[0].datasetIndex], elements[0].index);
+        // O tooltip usa mode "index", então elements[0] é sempre o 1º dataset da
+        // categoria. Para saber em qual barra o clique caiu (coleta ou recoleta,
+        // por exemplo), consulta o elemento exatamente sob o cursor.
+        const exatos = chart.getElementsAtEventForMode(
+          evt.native || evt, "nearest", { intersect: true }, true
+        );
+        const alvo = exatos?.[0] || elements?.[0];
+        if (!alvo) return;
+        aoClicar(chart.data.datasets[alvo.datasetIndex], alvo.index);
       },
       plugins: {
         legend: { display: false }, // legenda em HTML, acima do gráfico
@@ -1433,73 +1521,246 @@ export default function TelaGraficos() {
     };
   };
 
-  const opcoesTipoColeta = _opcoesViz({
+  // ====================================================================
+  // COLETA x RECOLETA — gráfico unificado e painel por gerente
+  // ====================================================================
+  const cr = data?.coleta_recoleta;
+  const labelsPeriodo = cr?.labels?.[periodoModo] || [];
+  const seriePeriodo = cr?.series?.[periodoModo] || {};
+
+  // Semestre a que um rótulo de período pertence (o modal acumula por semestre)
+  const semestreDoPeriodo = (rotulo) => {
+    if (String(rotulo).includes("semestre")) return rotulo;
+    const i = MESES_CURTOS.indexOf(rotulo);
+    return i < 0 ? "1º semestre" : i < 6 ? "1º semestre" : "2º semestre";
+  };
+
+  const buildColetaRecoletaChart = () => {
+    if (!labelsPeriodo.length) return null;
+    const barra = {
+      borderColor: VIZ.surface,
+      borderWidth: (ctx) => ((Number(ctx.dataset.data[ctx.dataIndex]) || 0) > 0 ? 2 : 0),
+      borderRadius: 3,
+      borderSkipped: false,
+      barPercentage: 0.86,
+      categoryPercentage: 0.68,
+      maxBarThickness: 72, // com poucas categorias (semestre) a barra viraria um bloco
+    };
+    return {
+      labels: labelsPeriodo,
+      datasets: [
+        // Barra 1 — Coleta (1ª visita): proporção aprovado x reprovado
+        { ...barra, label: "Aprovado (100%)", data: seriePeriodo.aprovado || [],
+          backgroundColor: VIZ.ok, stack: "coleta", _tipoBarra: "coleta" },
+        { ...barra, label: "Reprovado", data: seriePeriodo.reprovado || [],
+          backgroundColor: VIZ.abaixo, stack: "coleta", _tipoBarra: "coleta" },
+        // Barra 2 — Recoleta: só o quantitativo, sem divisão por resultado
+        { ...barra, label: "Recoletas", data: seriePeriodo.recoleta || [],
+          backgroundColor: VIZ.recoleta, stack: "recoleta", _tipoBarra: "recoleta" },
+      ],
+    };
+  };
+
+  // Rótulo por barra: % de aprovação na coleta, quantitativo na recoleta
+  const rotulosColetaRecoleta = {
+    coleta: labelsPeriodo.map((_, i) => {
+      const ap = seriePeriodo.aprovado?.[i] || 0;
+      const rp = seriePeriodo.reprovado?.[i] || 0;
+      return ap + rp > 0 ? fmtPct((ap / (ap + rp)) * 100, 0) : null;
+    }),
+    recoleta: labelsPeriodo.map((_, i) => {
+      const v = seriePeriodo.recoleta?.[i] || 0;
+      return v > 0 ? fmtInt(v) : null;
+    }),
+  };
+
+  // --- Ranking de lojas por recoleta, para o modal de detalhamento ---
+  const montarRankingRecoletas = (rotuloPeriodo) => {
+    const semestre = semestreDoPeriodo(rotuloPeriodo);
+    const noPeriodo = (r) =>
+      String(rotuloPeriodo).includes("semestre") ? r.semestre === rotuloPeriodo : r.mes === rotuloPeriodo;
+
+    const porLoja = new Map();
+    registrosConf
+      .filter((r) => r.grupo === "Recoleta" && noPeriodo(r))
+      .forEach((r) => {
+        if (!porLoja.has(r.sigla)) {
+          porLoja.set(r.sigla, { sigla: r.sigla, regional: r.regional, periodo: rotuloPeriodo, datasRecoletas: [] });
+        }
+        porLoja.get(r.sigla).datasRecoletas.push(r);
+      });
+
+    // Total de visitas: coletas + recoletas acumuladas no semestre
+    const visitasSemestre = new Map();
+    registrosConf
+      .filter((r) => r.semestre === semestre)
+      .forEach((r) => {
+        if (!visitasSemestre.has(r.sigla)) visitasSemestre.set(r.sigla, []);
+        visitasSemestre.get(r.sigla).push(r);
+      });
+
+    const porData = (a, b) => String(a.data_iso).localeCompare(String(b.data_iso));
+
+    const linhas = [...porLoja.values()].map((l) => {
+      const visitas = (visitasSemestre.get(l.sigla) || []).slice().sort(porData);
+      return {
+        sigla: l.sigla,
+        regional: l.regional,
+        periodo: l.periodo,
+        qtd: l.datasRecoletas.length,
+        datasRecoletas: l.datasRecoletas.slice().sort(porData).map((r) => r.data),
+        totalVisitas: visitas.length,
+        datasVisitas: visitas.map((r) => ({
+          data: r.data,
+          rotulo: r.grupo === "Recoleta" ? `Recoleta · ${r.visita}ª visita` : "Coleta · 1ª visita",
+          cor: r.grupo === "Recoleta" ? VIZ.recoleta : VIZ.ok,
+        })),
+      };
+    });
+
+    // Rank decrescente pela quantidade de recoletas do período
+    linhas.sort((a, b) => b.qtd - a.qtd || b.totalVisitas - a.totalVisitas || a.sigla.localeCompare(b.sigla));
+    return { periodo: rotuloPeriodo, semestre, linhas };
+  };
+
+  const opcoesColetaRecoleta = _opcoesViz({
     horizontal: false,
-    escala: tipoEscala,
-    rotulos: rotulosTopoMes,
-    aoClicar: (_ds, index) => {
-      const mes = conf?.labels?.[index];
+    escala: "valor",
+    rotulos: rotulosColetaRecoleta,
+    aoClicar: (dataset, index) => {
+      const periodo = labelsPeriodo[index];
+      if (dataset._tipoBarra === "recoleta") {
+        setModalRecoleta(montarRankingRecoletas(periodo));
+        return;
+      }
+      // barra de coleta abre o dossiê das 1ªs visitas do período
+      const noPeriodo = (r) =>
+        String(periodo).includes("semestre") ? r.semestre === periodo : r.mes === periodo;
       setDossie({
-        titulo: `${tipoAtual} · ${mes}`,
-        subtitulo: "Coletas do mês, por resultado da nota",
-        registros: registrosConf.filter((r) => r.grupo === tipoAtual && r.mes === mes),
+        titulo: `Coleta · ${periodo}`,
+        subtitulo: "1ª visita — aprovado (nota 100%) x reprovado",
+        registros: registrosConf.filter((r) => r.grupo === "Coleta" && noPeriodo(r)),
       });
     },
   });
 
-  const opcoesConformidadeGm = _opcoesViz({
+  // ====================================================================
+  // PAINEL UNIFICADO POR GERENTE DE MERCADO (3 métricas lado a lado)
+  // ====================================================================
+  const gmLabels = cr?.gerentes?.labels || [];
+  const periodosGm = labelsPeriodo;
+  const gmPeriodoAtual = periodosGm.includes(gmPeriodo) ? gmPeriodo : periodosGm[periodosGm.length - 1];
+  const painelGm = cr?.gerentes?.[periodoModo]?.[gmPeriodoAtual];
+
+  const METRICAS_GM = [
+    { chave: "reprovacoes", label: "Reprovações na 1ª coleta", cor: VIZ.abaixo },
+    { chave: "recoletas", label: "Recoletas no período", cor: VIZ.recoleta },
+    { chave: "pendentes", label: "Pendências no fechamento", cor: VIZ.pendente },
+  ];
+
+  // Ordena pelo saldo de pendências: é o que exige ação
+  const gmOrdem = (() => {
+    if (!painelGm || !gmLabels.length) return [];
+    return gmLabels
+      .map((nome, i) => ({
+        nome, i,
+        reprovacoes: painelGm.reprovacoes?.[i] || 0,
+        recoletas: painelGm.recoletas?.[i] || 0,
+        pendentes: painelGm.pendentes?.[i] || 0,
+      }))
+      .filter((l) => l.reprovacoes + l.recoletas + l.pendentes > 0)
+      .sort((a, b) => b.pendentes - a.pendentes || b.reprovacoes - a.reprovacoes);
+  })();
+
+  const buildPainelGmChart = () => {
+    if (!gmOrdem.length) return null;
+    return {
+      labels: gmOrdem.map((l) => nomeCurto(l.nome)),
+      datasets: METRICAS_GM.map((m) => ({
+        label: m.label,
+        data: gmOrdem.map((l) => l[m.chave]),
+        _abs: gmOrdem.map((l) => l[m.chave]),
+        _metrica: m.chave,
+        backgroundColor: m.cor,
+        borderColor: VIZ.surface,
+        borderWidth: (ctx) => ((Number(ctx.dataset.data[ctx.dataIndex]) || 0) > 0 ? 2 : 0),
+        borderRadius: 3,
+        borderSkipped: false,
+        barPercentage: 0.9,
+        categoryPercentage: 0.74,
+        maxBarThickness: 16,
+        stack: m.chave, // stacks distintos = 3 barras agrupadas
+      })),
+    };
+  };
+
+  const rotulosPainelGm = Object.fromEntries(
+    METRICAS_GM.map((m) => [
+      m.chave,
+      gmOrdem.map((l) => (l[m.chave] > 0 ? fmtInt(l[m.chave]) : null)),
+    ])
+  );
+
+  const opcoesPainelGm = _opcoesViz({
     horizontal: true,
-    escala: gmEscala,
-    rotulos: rotulosGm,
-    nomesCompletos: (gerentesOrdenados || []).map((l) => l.nome),
-    aoClicar: (_ds, index) => {
-      const nome = gerentesOrdenados?.[index]?.nome;
-      const grupos = gmView === "Todas" ? conf?.gerentes?.grupos || [] : [gmView];
+    escala: "valor",
+    rotulos: rotulosPainelGm,
+    nomesCompletos: gmOrdem.map((l) => l.nome),
+    aoClicar: (dataset, index) => {
+      const linha = gmOrdem[index];
+      if (!linha) return;
+      const periodo = gmPeriodoAtual;
+      const noPeriodo = (r) =>
+        String(periodo).includes("semestre") ? r.semestre === periodo : r.mes === periodo;
+
+      if (dataset._metrica === "pendentes") {
+        const detalhe = painelGm?.pendentes_detalhe?.[linha.nome] || [];
+        setDossie({
+          modo: "pendencias",
+          titulo: linha.nome,
+          subtitulo: `${detalhe.length} pendência(s) em aberto no fechamento de ${periodo}`,
+          registros: detalhe,
+          colunas: [
+            { key: "sigla", label: "Sigla" },
+            { key: "abertura", label: "Aberta em" },
+            { key: "dias_em_aberto", label: "Dias em aberto" },
+            { key: "visitas", label: "Visitas no ciclo" },
+          ],
+        });
+        return;
+      }
+
+      if (dataset._metrica === "recoletas") {
+        const base = montarRankingRecoletas(periodo);
+        const daCarteira = new Set(
+          registrosConf.filter((r) => r.gm === linha.nome).map((r) => r.sigla)
+        );
+        setModalRecoleta({
+          ...base,
+          periodo: `${periodo} · ${nomeCurto(linha.nome)}`,
+          linhas: base.linhas.filter((l) => daCarteira.has(l.sigla)),
+        });
+        return;
+      }
+
       setDossie({
-        titulo: nome,
-        subtitulo:
-          gmView === "Todas"
-            ? "Todas as coletas de 2026"
-            : `${gmView} — 2026`,
+        titulo: linha.nome,
+        subtitulo: `Reprovações na 1ª coleta — ${periodo}`,
         registros: registrosConf.filter(
-          (r) => r.gm === nome && grupos.includes(r.grupo_gm)
+          (r) => r.gm === linha.nome && r.grupo === "Coleta" && r.status === "abaixo" && noPeriodo(r)
         ),
       });
     },
   });
 
-  // --- Totais do recorte exibido (cabeçalho do bloco de tipo de coleta) ---
-  const totaisTipo = {
-    ok: dadosTipo ? _soma(dadosTipo.ok) : 0,
-    abaixo: dadosTipo ? _soma(dadosTipo.abaixo) : 0,
-    semNota: dadosTipo ? _soma(dadosTipo.sem_nota) : 0,
-  };
-
-  const totaisGm = (gerentesOrdenados || []).reduce(
-    (a, l) => ({ ok: a.ok + l.ok, abaixo: a.abaixo + l.abaixo, semNota: a.semNota + l.sem_nota }),
-    { ok: 0, abaixo: 0, semNota: 0 }
+  const totaisPainelGm = gmOrdem.reduce(
+    (a, l) => ({
+      reprovacoes: a.reprovacoes + l.reprovacoes,
+      recoletas: a.recoletas + l.recoletas,
+      pendentes: a.pendentes + l.pendentes,
+    }),
+    { reprovacoes: 0, recoletas: 0, pendentes: 0 }
   );
-
-  // --- Clique no gráfico de pendências por gerente ---
-  const abrirDossiePendencias = (gmNome) => {
-    const detalhes = data?.nao_conformidade_gm?.detalhes?.[gmNome] || [];
-    setDossie({
-      modo: "pendencias",
-      titulo: gmNome,
-      subtitulo: `${detalhes.length} pendência(s) aberta(s)`,
-      registros: detalhes,
-      colunas: [
-        { key: "sigla", label: "Sigla" },
-        { key: "regional", label: "Regional" },
-        { key: "mes", label: "Mês" },
-        { key: "data", label: "Data" },
-        { key: "tipo", label: "Tipo de coleta" },
-        { key: "pendencia", label: "Pendência" },
-        { key: "vencimento", label: "Vencimento" },
-        { key: "consultor", label: "Consultor" },
-      ],
-    });
-  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 font-sans">
@@ -1541,113 +1802,121 @@ export default function TelaGraficos() {
           </div>
         </CollapsibleSection>
 
-        {/* --- 2. TIPO DE COLETA POR MÊS (conformidade da nota) --- */}
-        <CollapsibleSection
-          title="Tipo de Coleta por Mês (2026)"
-          icon={<List className="text-slate-400" size={20} />}
-        >
-          {conf?.labels?.length && dadosTipo ? (
-            <div className="pt-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <SegmentedControl
-                  value={tipoAtual}
-                  onChange={setTipoView}
-                  options={gruposComDados.map((g) => ({ id: g, label: g }))}
-                />
-                <SegmentedControl
-                  value={tipoEscala}
-                  onChange={setTipoEscala}
-                  options={[
-                    { id: "valor", label: "Coletas" },
-                    { id: "pct", label: "Proporção" },
-                  ]}
-                />
-              </div>
-
-              <div className="mt-7">
-                <ResumoConformidade
-                  ok={totaisTipo.ok}
-                  abaixo={totaisTipo.abaixo}
-                  semNota={totaisTipo.semNota}
-                  rotulo={`registros de ${tipoAtual.toLowerCase()} em 2026`}
-                />
-              </div>
-
-              <div className="h-[330px] mt-8">
-                <Bar data={buildTipoColetaChart2()} options={opcoesTipoColeta} plugins={[stackTopLabelPlugin]} />
-              </div>
-
-              <p className="text-xs text-slate-600 mt-4">
-                Acima de cada mês, o percentual com nota 100%; quando há coletas sem nota,
-                o número cinza indica sobre quantas o percentual foi calculado. Clique numa
-                coluna para abrir o dossiê com a lista de restaurantes.
-              </p>
-            </div>
-          ) : (
-            <div className="h-80 mt-4">
-              <Bar
-                data={buildTipoColetaChart(data?.tipo_coleta)}
-                options={{
-                  ...commonOptions,
-                  scales: {
-                    ...commonOptions.scales,
-                    x: { ...commonOptions.scales.x, stacked: false },
-                    y: { ...commonOptions.scales.y, stacked: false }
-                  }
-                }}
-              />
-            </div>
-          )}
-        </CollapsibleSection>
-
-        {/* --- 2b. CONFORMIDADE POR GERENTE DE MERCADO --- */}
-        {gerentesOrdenados?.length > 0 && (
+        {/* --- 2. COLETA E RECOLETA (gráfico unificado) --- */}
+        {labelsPeriodo.length > 0 && (
           <CollapsibleSection
-            title="Conformidade por Gerente de Mercado (2026)"
-            icon={<Users className="text-slate-400" size={20} />}
+            title="Coleta e Recoleta (2026)"
+            icon={<List className="text-slate-400" size={20} />}
           >
             <div className="pt-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <SegmentedControl value={gmView} onChange={setGmView} options={gmOpcoes} />
                 <SegmentedControl
-                  value={gmEscala}
-                  onChange={setGmEscala}
+                  value={periodoModo}
+                  onChange={setPeriodoModo}
                   options={[
-                    { id: "pct", label: "Proporção" },
-                    { id: "valor", label: "Coletas" },
+                    { id: "mensal", label: "Mensal" },
+                    { id: "semestral", label: "Semestre" },
+                  ]}
+                />
+                <LegendaViz
+                  itens={[
+                    { label: "Aprovado (100%)", cor: VIZ.ok },
+                    { label: "Reprovado", cor: VIZ.abaixo },
+                    { label: "Recoletas", cor: VIZ.recoleta },
                   ]}
                 />
               </div>
 
-              <div className="mt-7">
-                <ResumoConformidade
-                  ok={totaisGm.ok}
-                  abaixo={totaisGm.abaixo}
-                  semNota={totaisGm.semNota}
-                  rotulo="coletas atribuídas a um gerente"
-                />
+              <div className="flex flex-wrap items-end gap-8 mt-7">
+                <div>
+                  <p className="text-[32px] leading-none font-semibold text-slate-50 tabular-nums">
+                    {fmtPct(
+                      (_soma(seriePeriodo.aprovado) + _soma(seriePeriodo.reprovado)) > 0
+                        ? (_soma(seriePeriodo.aprovado) /
+                            (_soma(seriePeriodo.aprovado) + _soma(seriePeriodo.reprovado))) * 100
+                        : 0
+                    )}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1.5">aprovadas na 1ª coleta</p>
+                </div>
+                <div>
+                  <p className="text-[32px] leading-none font-semibold text-slate-50 tabular-nums">
+                    {fmtInt(_soma(seriePeriodo.reprovado))}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1.5">reprovações na 1ª coleta</p>
+                </div>
+                <div>
+                  <p className="text-[32px] leading-none font-semibold text-slate-50 tabular-nums">
+                    {fmtInt(_soma(seriePeriodo.recoleta))}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1.5">recoletas realizadas</p>
+                </div>
               </div>
 
-              <div
-                className="mt-8"
-                style={{ height: gerentesOrdenados.length * 32 + 48 }}
-              >
+              <div className="h-[340px] mt-8">
                 <Bar
-                  data={buildConformidadeGmChart()}
-                  options={opcoesConformidadeGm}
+                  data={buildColetaRecoletaChart()}
+                  options={opcoesColetaRecoleta}
                   plugins={[stackTopLabelPlugin]}
                 />
               </div>
 
               <p className="text-xs text-slate-600 mt-4">
-                Ordenado da maior para a menor conformidade. Clique numa barra para abrir o
-                dossiê do gerente.
-                {conf?.gerentes?.sem_gerente > 0 &&
-                  ` ${fmtInt(conf.gerentes.sem_gerente)} coletas sem gerente informado na planilha ficaram fora deste gráfico.`}
+                A barra de coleta mostra a proporção aprovado/reprovado da 1ª visita; a de recoleta,
+                apenas o quantitativo. Clique na barra de recoleta para ver o ranking de lojas, ou na
+                de coleta para o dossiê das primeiras visitas.
               </p>
             </div>
           </CollapsibleSection>
         )}
+
+        {/* --- 2b. PAINEL UNIFICADO POR GERENTE DE MERCADO --- */}
+        {gmOrdem.length > 0 && (
+          <CollapsibleSection
+            title="Painel por Gerente de Mercado (2026)"
+            icon={<Users className="text-slate-400" size={20} />}
+          >
+            <div className="pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <SegmentedControl
+                  value={gmPeriodoAtual}
+                  onChange={setGmPeriodo}
+                  options={periodosGm.map((p) => ({
+                    id: p,
+                    label: String(p).replace(" semestre", "º sem").replace("ºº", "º"),
+                  }))}
+                />
+                <LegendaViz itens={METRICAS_GM.map((m) => ({ label: m.label, cor: m.cor }))} />
+              </div>
+
+              <div className="flex flex-wrap items-end gap-8 mt-7">
+                {METRICAS_GM.map((m) => (
+                  <div key={m.chave}>
+                    <p className="text-[32px] leading-none font-semibold text-slate-50 tabular-nums">
+                      {fmtInt(totaisPainelGm[m.chave])}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1.5">{m.label.toLowerCase()}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8" style={{ height: gmOrdem.length * 62 + 48 }}>
+                <Bar
+                  data={buildPainelGmChart()}
+                  options={opcoesPainelGm}
+                  plugins={[stackTopLabelPlugin]}
+                />
+              </div>
+
+              <p className="text-xs text-slate-600 mt-4">
+                Ordenado pelo saldo de pendências em aberto no fechamento de {gmPeriodoAtual}. As
+                recoletas mostram o esforço do mês, que o saldo final sozinho não revela. Clique em
+                qualquer barra para abrir o detalhe.
+              </p>
+            </div>
+          </CollapsibleSection>
+        )}
+
 
         {/* --- 3. EVOLUÇÃO ANUAL DE PENDÊNCIAS --- */}
         <CollapsibleSection
@@ -1903,48 +2172,6 @@ export default function TelaGraficos() {
           </CollapsibleSection>
         )}
 
-        {/* --- GRÁFICO NÃO CONFORMIDADE POR GERENTE --- */}
-        {data?.nao_conformidade_gm?.labels?.length > 0 && (
-          <CollapsibleSection
-            title="Pendências Abertas por Gerente de Mercado"
-            icon={<UserX className="text-red-400" size={22} />}
-            badge="Clique na barra para ver as pendências"
-          >
-            <div style={{ height: Math.max(300, (data?.nao_conformidade_gm?.labels?.length || 5) * 40) }} className="mt-4">
-              <Bar
-                data={buildNaoConformidadeChart(data?.nao_conformidade_gm)}
-                options={{
-                  ...commonOptions,
-                  indexAxis: 'y',
-                  onHover: (evt, elements) => {
-                    if (evt?.native?.target) {
-                      evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
-                    }
-                  },
-                  onClick: (evt, elements, chart) => {
-                    if (!elements.length) return;
-                    abrirDossiePendencias(chart.data.labels[elements[0].index]);
-                  },
-                  plugins: {
-                    ...commonOptions.plugins,
-                    tooltip: {
-                      ...commonOptions.plugins.tooltip,
-                      callbacks: {
-                        label: (ctx) => `${ctx.raw} pendência(s) aberta(s)`,
-                        footer: () => 'Clique na barra para ver a lista'
-                      }
-                    }
-                  },
-                  scales: {
-                    x: { ...commonOptions.scales.y, beginAtZero: true, ticks: { ...commonOptions.scales.y.ticks, stepSize: 1 } },
-                    y: { ticks: { color: "#cbd5e1", font: { size: 11 } }, grid: { display: false } }
-                  }
-                }}
-              />
-            </div>
-          </CollapsibleSection>
-        )}
-
         {/* BACK ROOM (STATUS POR REGIONAL) */}
         <CollapsibleSection
           title="Back Room (Status por Regional)"
@@ -2003,6 +2230,14 @@ export default function TelaGraficos() {
         {renderTopicSection("Bin Bebidas")}
 
       </div>
+
+      {/* Ranking de lojas por recoleta + datas exatas */}
+      <ModalRecoletas
+        dados={modalRecoleta}
+        onClose={() => setModalRecoleta(null)}
+        onVerDatas={setSubDatas}
+      />
+      <SubModalDatas info={subDatas} onClose={() => setSubDatas(null)} />
 
       {/* Janela de dossiê (abre ao clicar numa coluna) */}
       <DossieModal
