@@ -172,10 +172,17 @@ def haccp_graficos():
             
             # 3. Restaurantes por Regional (cruza com planilha de potabilidade)
             try:
-                response_data["restaurantes_regional"] = processar_regionais_appcc(path_haccp, path_geral)
+                regionais = processar_regionais_appcc(path_haccp, path_geral)
+                response_data["restaurantes_regional"] = regionais
+                # 4. Mesmo recorte por UF (a planilha nova traz o Estado por linha)
+                response_data["restaurantes_estado"] = regionais.get(
+                    "por_estado", {"labels": [], "valores": [], "total_restaurantes": 0}
+                )
             except Exception as e:
                 print(f"⚠️ [HACCP] Erro regionais: {e}")
-                response_data["restaurantes_regional"] = {"labels": [], "valores": [], "total_restaurantes": 0}
+                vazio = {"labels": [], "valores": [], "total_restaurantes": 0}
+                response_data["restaurantes_regional"] = vazio
+                response_data["restaurantes_estado"] = vazio
         
         return jsonify(response_data)
     except Exception as e:

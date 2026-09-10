@@ -22,6 +22,65 @@ def _normalizar(texto):
     )
 
 
+
+# ==============================================================================
+# LEITURA TOLERANTE AO LAYOUT
+# A planilha ganhou um bloco de legendas no topo (o cabecalho saiu da linha 2
+# para a 7), duas colunas novas (OPCO/LICO e Regional) e passou a registrar os
+# microrganismos por codigo numerico em vez de texto. As funcoes abaixo
+# localizam tudo por nome / posicao relativa, de modo que os dois layouts --
+# o antigo e o novo -- continuem sendo lidos pelo mesmo codigo.
+# ==============================================================================
+
+# Legenda de equipamentos/superficies da planilha nova
+CODIGOS_MICRO = {
+    "1": (True, False),   # mesofilos
+    "2": (False, True),   # enterobacterias
+    "3": (True, True),    # mesof/enterobacterias
+}
+
+
+def _localizar_cabecalho(ws, max_linhas=15):
+    """Devolve a linha do cabecalho -- a que tem SIGLA na coluna A."""
+    for r in range(1, max_linhas + 1):
+        if _normalizar(str(ws.cell(r, 1).value or "")) == "sigla":
+            return r
+    return 2  # layout antigo
+
+
+def _mapa_colunas(ws, linha_cabecalho):
+    """{nome normalizado do cabecalho: indice da coluna (1-based)}"""
+    mapa = {}
+    for col in range(1, (ws.max_column or 1) + 1):
+        valor = ws.cell(linha_cabecalho, col).value
+        if valor is not None and str(valor).strip():
+            mapa.setdefault(_normalizar(str(valor)), col)
+    return mapa
+
+
+def _coluna(mapa, *nomes):
+    for nome in nomes:
+        idx = mapa.get(_normalizar(nome))
+        if idx:
+            return idx
+    return None
+
+
+def _colunas_de_analise(mapa):
+    """
+    As colunas de equipamento/superficie sao as que ficam entre 'Manipulador' e
+    'Pendencia'. Vale nos dois layouts (H..M no antigo, J..O no novo) e sobrevive
+    a renomeacoes das colunas de equipamento.
+    """
+    ini = _coluna(mapa, "Manipulador")
+    fim = _coluna(mapa, "Pendencia")
+    if ini and fim and fim > ini + 1:
+        return list(range(ini + 1, fim))
+    conhecidas = ["Bico HT", "Fat. Tomates", "Bocal da Foamino", "Bocal da Fomino",
+                  "Mesa cond.", "Pegador camara", "Pinca proteina"]
+    return [i for i in (_coluna(mapa, n) for n in conhecidas) if i]
+
+
 def _classificar_microorganismo(valor_celula):
     """
     Classifica o texto livre de uma célula de equipamento.
@@ -42,6 +101,12 @@ def _classificar_microorganismo(valor_celula):
     # Ignorar valores que não são microorganismos
     if texto in ('ok', 'na', 'nan', 'none', '', 'ook'):
         return False, False
+
+    # A planilha nova registra o resultado pelo codigo da legenda
+    # (1 mesofilos, 2 enterobacterias, 3 ambos) em vez do texto.
+    codigo = texto[:-2] if texto.endswith('.0') else texto
+    if codigo in CODIGOS_MICRO:
+        return CODIGOS_MICRO[codigo]
     
     tem_mesofilos = False
     tem_entero = False
@@ -87,32 +152,33 @@ def processar_microorganismos(path):
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         ws = wb['GERAL']
         
-        # Colunas de equipamento: H=8, I=9, J=10, K=11, L=12, M=13 (1-indexed)
+        linha_cab = _localizar_cabecalho(ws)
+        mapa = _mapa_colunas(ws, linha_cab)
+        cols = _colunas_de_analise(mapa)
+        if not cols:
+            raise ValueError("colunas de equipamento/superficie nao localizadas")
+
         equipamentos = {
-            8: "Bico HT",
-            9: "Fat. Tomates",
-            10: "Bocal da Fomino",
-            11: "Mesa Cond.",
-            12: "Pinça",
-            13: "Pegador"
+            col: str(ws.cell(linha_cab, col).value or f"Col {col}").strip()
+            for col in cols
         }
-        
-        # Ler nomes reais dos cabeçalhos (linha 2)
-        for col_idx in equipamentos.keys():
-            header_val = ws.cell(2, col_idx).value
-            if header_val:
-                equipamentos[col_idx] = str(header_val).strip()
-        
+
         # Contar por equipamento
         contagem_meso = {col: 0 for col in equipamentos}
         contagem_entero = {col: 0 for col in equipamentos}
         total_restaurantes = 0
-        
-        for row in ws.iter_rows(min_row=3, min_col=1, max_col=max(equipamentos.keys()) + 1):
+
+        for row in ws.iter_rows(min_row=linha_cab + 1, min_col=1, max_col=max(cols) + 1):
             sigla = row[0].value  # Col A - SIGLA
             if not sigla or str(sigla).strip().upper() in ('', 'NAN', 'NONE'):
                 continue
-            
+
+            # A planilha ja traz as visitas programadas, ainda sem analise:
+            # sem nenhum resultado preenchido, a linha nao e uma coleta realizada.
+            if all(row[col - 1].value is None or str(row[col - 1].value).strip() == ''
+                   for col in equipamentos):
+                continue
+
             total_restaurantes += 1
             
             for col_idx in equipamentos:
@@ -182,22 +248,24 @@ def processar_pendencias_appcc(path):
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         ws = wb['GERAL']
         
-        # Coluna N = 14 (1-indexed)
-        COL_PENDENCIA = 14
-        
+        linha_cab = _localizar_cabecalho(ws)
+        mapa = _mapa_colunas(ws, linha_cab)
+        COL_PENDENCIA = _coluna(mapa, "Pendencia") or 14
+
         contagem = Counter()
         total_restaurantes = 0
-        
-        for row in ws.iter_rows(min_row=3, min_col=1, max_col=COL_PENDENCIA + 1):
+
+        for row in ws.iter_rows(min_row=linha_cab + 1, min_col=1, max_col=COL_PENDENCIA + 1):
             sigla = row[0].value  # Col A
+
             if not sigla or str(sigla).strip().upper() in ('', 'NAN', 'NONE'):
                 continue
-            
-            total_restaurantes += 1
-            
+
             pendencia = row[COL_PENDENCIA - 1].value  # 0-indexed
             if not pendencia:
-                continue
+                continue  # visita programada, ainda sem coleta
+
+            total_restaurantes += 1
             
             texto = _normalizar(str(pendencia))
             
@@ -304,27 +372,53 @@ def processar_regionais_appcc(path_haccp, path_geral):
         wb_haccp = openpyxl.load_workbook(path_haccp, read_only=True, data_only=True)
         ws_haccp = wb_haccp['GERAL']
         
+        linha_cab = _localizar_cabecalho(ws_haccp)
+        mapa_cols = _mapa_colunas(ws_haccp, linha_cab)
+        # A planilha nova ja traz a Regional; so recorre ao cruzamento se nao tiver
+        col_regional = _coluna(mapa_cols, "Regional")
+        col_estado = _coluna(mapa_cols, "Estado") or 2
+        col_pend = _coluna(mapa_cols, "Pendencia")
+        max_col = max(x for x in (col_regional, col_estado, col_pend, 2) if x)
+        if col_regional:
+            print("[APPCC REG] Coluna Regional lida da propria planilha APPCC")
+
         contagem_regional = Counter()
+        contagem_estado = Counter()
         total_restaurantes = 0
         sem_mapa = []
-        
-        for row in ws_haccp.iter_rows(min_row=3, min_col=1, max_col=2):
+
+        for row in ws_haccp.iter_rows(min_row=linha_cab + 1, min_col=1, max_col=max_col):
             sigla = row[0].value  # Col A
-            estado = row[1].value  # Col B (fallback)
-            
+            estado = row[col_estado - 1].value
+
             if not sigla or str(sigla).strip().upper() in ('', 'NAN', 'NONE'):
                 continue
-            
+
+            # So conta visitas efetivamente realizadas
+            if col_pend and not row[col_pend - 1].value:
+                continue
+
             total_restaurantes += 1
             s = str(sigla).strip().upper()
-            
-            # Tenta mapear pela SIGLA
-            if s in mapa_sigla_regional:
+
+            uf = str(estado).strip().upper() if estado else ''
+            if uf and uf not in ('NAN', 'NONE', '#N/A'):
+                contagem_estado[uf] += 1
+
+            regional_propria = None
+            if col_regional:
+                bruto = row[col_regional - 1].value
+                if bruto and str(bruto).strip().upper() not in ('', 'NAN', 'NONE', '#N/A'):
+                    regional_propria = str(bruto).strip().upper()
+
+            if regional_propria:
+                contagem_regional[regional_propria] += 1
+            elif s in mapa_sigla_regional:
                 contagem_regional[mapa_sigla_regional[s]] += 1
             else:
                 sem_mapa.append(s)
                 # Fallback: usar estado como label
-                e = str(estado).strip().upper() if estado else 'DESCONHECIDO'
+                e = uf or 'DESCONHECIDO'
                 contagem_regional[f"({e})"] += 1
         
         wb_haccp.close()
@@ -360,10 +454,22 @@ def processar_regionais_appcc(path_haccp, path_geral):
         for l, v in zip(labels_formatados, valores):
             print(f"   {l}: {v}")
         
+        # Mesmo recorte, agrupado por UF: o mapeamento Estado->Regional nao e 1:1
+        # (SP se divide em SAO1 e SAO2), entao as duas visoes se complementam.
+        labels_uf = sorted(contagem_estado.keys(), key=lambda uf: (-contagem_estado[uf], uf))
+        valores_uf = [contagem_estado[uf] for uf in labels_uf]
+        print(f"✅ [APPCC UF] {len(labels_uf)} estados: " +
+              ", ".join(f"{l}={v}" for l, v in zip(labels_uf, valores_uf)))
+
         return {
             "labels": labels_formatados,
             "valores": valores,
-            "total_restaurantes": total_restaurantes
+            "total_restaurantes": total_restaurantes,
+            "por_estado": {
+                "labels": labels_uf,
+                "valores": valores_uf,
+                "total_restaurantes": total_restaurantes,
+            },
         }
     
     except Exception as e:
@@ -373,5 +479,6 @@ def processar_regionais_appcc(path_haccp, path_geral):
         return {
             "labels": [],
             "valores": [],
-            "total_restaurantes": 0
+            "total_restaurantes": 0,
+            "por_estado": {"labels": [], "valores": [], "total_restaurantes": 0},
         }

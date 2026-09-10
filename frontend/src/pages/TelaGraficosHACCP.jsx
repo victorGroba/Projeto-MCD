@@ -184,6 +184,29 @@ export default function TelaGraficosHACCP() {
     };
   };
 
+  // --- Config do gráfico de Restaurantes por Estado (UF) ---
+  // Mesmo padrão e métrica do gráfico por Regional: o mapeamento Estado→Regional
+  // não é 1:1 (SP se divide em SAO1 e SAO2), então as duas visões se complementam.
+  const buildEstadoChart = () => {
+    if (!data?.restaurantes_estado?.labels?.length) return null;
+    const { labels, valores } = data.restaurantes_estado;
+    return {
+      labels,
+      datasets: [
+        {
+          label: "Restaurantes",
+          data: valores,
+          backgroundColor: "#38bdf8",
+          borderColor: "#0ea5e9",
+          borderWidth: 1,
+          borderRadius: 4,
+          barPercentage: 0.5,
+          categoryPercentage: 0.6
+        }
+      ]
+    };
+  };
+
   // --- Helper para criar config simples (gráficos existentes) ---
   const createChartConfig = (label, labels, values, color) => ({
     labels: labels || [],
@@ -202,6 +225,7 @@ export default function TelaGraficosHACCP() {
   const microData = data ? buildMicroorganismosChart() : null;
   const pendTipoData = data ? buildPendenciasTipoChart() : null;
   const regionalData = data ? buildRegionalChart() : null;
+  const estadoData = data ? buildEstadoChart() : null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -281,6 +305,22 @@ export default function TelaGraficosHACCP() {
                 </p>
                 <div className="h-72">
                   <Bar data={regionalData} options={verticalOptions} />
+                </div>
+              </div>
+            )}
+
+            {/* 4. Quantidade por Estado (UF) */}
+            {estadoData && (
+              <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg">
+                <div className="flex items-center gap-3 mb-1">
+                  <MapPin size={22} className="text-sky-400" />
+                  <h2 className="text-lg font-bold text-sky-400">Restaurantes coletados por Estado</h2>
+                </div>
+                <p className="text-slate-500 text-sm mb-4 ml-9">
+                  ({data.restaurantes_estado.total_restaurantes} Restaurantes com coleta)
+                </p>
+                <div className="h-72">
+                  <Bar data={estadoData} options={verticalOptions} />
                 </div>
               </div>
             )}
