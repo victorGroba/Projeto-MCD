@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Line, Bar } from "react-chartjs-2";
 import { api } from "../api/api";
-import { ArrowLeft, RefreshCw, BarChart2, Target, AlertTriangle, List, UserX, Users, ChevronDown, ChevronUp, Filter, X, Download, CalendarDays } from "lucide-react";
+import { ArrowLeft, RefreshCw, BarChart2, Target, AlertTriangle, List, UserX, Users, ChevronDown, ChevronUp, Filter, X, Download, CalendarDays, MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   Chart as ChartJS,
@@ -1645,6 +1645,70 @@ export default function TelaGraficos() {
   });
 
   // ====================================================================
+  // COLETAS POR ESTADO (UF)
+  // Complementa a visão por Regional: o mapeamento Estado→Regional não é 1:1
+  // (SP se divide entre SAO1 e SAO2), então as duas leituras não se substituem.
+  // ====================================================================
+  const estadosOrdenados = (() => {
+    if (!registrosConf.length) return [];
+    const porUf = new Map();
+    registrosConf.forEach((r) => {
+      const uf = (r.estado || "").trim().toUpperCase();
+      if (!uf || uf === "NAN" || uf === "NONE") return;
+      if (!porUf.has(uf)) porUf.set(uf, { uf, coleta: 0, recoleta: 0, total: 0 });
+      const linha = porUf.get(uf);
+      if (r.grupo === "Recoleta") linha.recoleta += 1;
+      else linha.coleta += 1;
+      linha.total += 1;
+    });
+    return [...porUf.values()].sort((a, b) => b.total - a.total || a.uf.localeCompare(b.uf));
+  })();
+
+  const buildEstadoChart = () => {
+    if (!estadosOrdenados.length) return null;
+    const barra = {
+      borderColor: VIZ.surface,
+      borderWidth: (ctx) => ((Number(ctx.dataset.data[ctx.dataIndex]) || 0) > 0 ? 2 : 0),
+      borderRadius: 3,
+      borderSkipped: false,
+      barPercentage: 0.72,
+      categoryPercentage: 0.86,
+      maxBarThickness: 18,
+      stack: "uf",
+    };
+    return {
+      labels: estadosOrdenados.map((l) => l.uf),
+      datasets: [
+        { ...barra, label: "Coleta", data: estadosOrdenados.map((l) => l.coleta),
+          _abs: estadosOrdenados.map((l) => l.coleta), _grupoUf: "Coleta", backgroundColor: VIZ.ok },
+        { ...barra, label: "Recoleta", data: estadosOrdenados.map((l) => l.recoleta),
+          _abs: estadosOrdenados.map((l) => l.recoleta), _grupoUf: "Recoleta", backgroundColor: VIZ.recoleta },
+      ],
+    };
+  };
+
+  const rotulosEstado = { uf: estadosOrdenados.map((l) => fmtInt(l.total)) };
+
+  const opcoesEstado = _opcoesViz({
+    horizontal: true,
+    escala: "valor",
+    rotulos: rotulosEstado,
+    aoClicar: (dataset, index) => {
+      const linha = estadosOrdenados[index];
+      if (!linha) return;
+      const grupo = dataset._grupoUf;
+      setDossie({
+        titulo: `${linha.uf} · ${grupo.toLowerCase()}s`,
+        subtitulo: `${fmtInt(linha.total)} coletas no estado em 2026`,
+        registros: registrosConf.filter(
+          (r) => (r.estado || "").trim().toUpperCase() === linha.uf &&
+                 (grupo === "Recoleta" ? r.grupo === "Recoleta" : r.grupo !== "Recoleta")
+        ),
+      });
+    },
+  });
+
+  // ====================================================================
   // PAINEL UNIFICADO POR GERENTE DE MERCADO (3 métricas lado a lado)
   // ====================================================================
   const gmLabels = cr?.gerentes?.labels || [];
@@ -1937,6 +2001,44 @@ export default function TelaGraficos() {
             <Bar data={buildLegacyChart(data?.restaurante_regional)} options={commonOptions} />
           </div>
         </CollapsibleSection>
+
+        {/* --- 4b. COLETAS POR ESTADO (UF) --- */}
+        {estadosOrdenados.length > 0 && (
+          <CollapsibleSection
+            title="Coletas por Estado (2026)"
+            icon={<MapPin className="text-slate-400" size={20} />}
+          >
+            <div className="pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[32px] leading-none font-semibold text-slate-50 tabular-nums">
+                    {fmtInt(estadosOrdenados.length)}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1.5">estados com coleta</p>
+                </div>
+                <LegendaViz
+                  itens={[
+                    { label: "Coleta", cor: VIZ.ok },
+                    { label: "Recoleta", cor: VIZ.recoleta },
+                  ]}
+                />
+              </div>
+
+              <div className="mt-8" style={{ height: estadosOrdenados.length * 30 + 48 }}>
+                <Bar
+                  data={buildEstadoChart()}
+                  options={opcoesEstado}
+                  plugins={[stackTopLabelPlugin]}
+                />
+              </div>
+
+              <p className="text-xs text-slate-600 mt-4">
+                Complementa a visão por Regional — o mapeamento Estado→Regional não é 1:1
+                (SP se divide entre SAO1 e SAO2). Clique numa barra para abrir o dossiê.
+              </p>
+            </div>
+          </CollapsibleSection>
+        )}
 
         {/* --- CONFORMIDADE MENSAL (STACKED - Padrão da foto) --- */}
         {data?.backroom_mensal?.labels?.length > 0 && (

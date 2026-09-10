@@ -402,6 +402,7 @@ def get_conformidade_dossie(df, ano=2026):
         col_regional = encontrar_coluna(df, ['regional', 'regiao'])
         col_consultor = encontrar_coluna(df, ['consultor'])
         col_visita = encontrar_coluna(df, ['visita'])
+        col_estado = encontrar_coluna(df, ['estado', 'uf'])
 
         if not col_tipo or not col_nota:
             print("[KPIs] Dossie - colunas 'tipo de coleta'/'nota' nao encontradas")
@@ -443,6 +444,7 @@ def get_conformidade_dossie(df, ano=2026):
             registros.append({
                 "sigla": _limpo(linha[col_sigla]) if col_sigla else "",
                 "regional": _limpo(linha[col_regional]) if col_regional else "",
+                "estado": (_limpo(linha[col_estado]).upper() if col_estado else ""),
                 "gm": _limpo(linha[col_gm]) if col_gm else "",
                 "consultor": _limpo(linha[col_consultor]) if col_consultor else "",
                 "mes_num": mes_num,
