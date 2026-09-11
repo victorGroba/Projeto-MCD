@@ -126,6 +126,18 @@ def processar_regional_ok_nok(df):
     return {"labels": labels, "valores": valores}
 
 # --- PROCESSADOR DE STATUS (Back Room / Gelo) ---
+def _inteiro(valor):
+    """
+    Converte celula em inteiro, tratando vazio como zero.
+
+    Nao da para escrever `int(pd.to_numeric(v) or 0)`: NaN e truthy em Python,
+    entao o `or 0` nao se aplica e o int() estoura. Como a leitura ficava dentro
+    de um `except: continue`, a linha inteira era descartada em silencio.
+    """
+    numero = pd.to_numeric(valor, errors='coerce')
+    return 0 if pd.isna(numero) else int(numero)
+
+
 def processar_status_bloco(df):
     if df is None or df.empty: return {"valores": {}, "labels": []}
     
@@ -151,17 +163,19 @@ def processar_status_bloco(df):
         sigla = str(row.iloc[0]).strip()
         if "TOTAL" in sigla.upper(): continue
         try:
-            vt = int(pd.to_numeric(row.iloc[idx_total], errors='coerce') or 0) if idx_total != -1 else 0
-            vo = int(pd.to_numeric(row.iloc[idx_ok], errors='coerce') or 0) if idx_ok != -1 else 0
-            vn = int(pd.to_numeric(row.iloc[idx_nok], errors='coerce') or 0) if idx_nok != -1 else 0
-            vp = int(pd.to_numeric(row.iloc[idx_pend], errors='coerce') or 0) if idx_pend != -1 else 0
+            vt = _inteiro(row.iloc[idx_total]) if idx_total != -1 else 0
+            vo = _inteiro(row.iloc[idx_ok]) if idx_ok != -1 else 0
+            vn = _inteiro(row.iloc[idx_nok]) if idx_nok != -1 else 0
+            vp = _inteiro(row.iloc[idx_pend]) if idx_pend != -1 else 0
             
             labels.append(sigla)
             lista_total.append(vt)
             lista_ok.append(vo)
             lista_nok.append(vn)
             lista_pend.append(vp)
-        except: continue
+        except Exception as e:
+            print(f"⚠️ [STATUS BLOCO] Linha '{sigla}' ignorada: {e}")
+            continue
 
     return {"labels": labels, "valores": {"Total": lista_total, "OK": lista_ok, "NOK": lista_nok, "Pendentes": lista_pend}}
 
