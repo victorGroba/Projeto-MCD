@@ -344,6 +344,25 @@ export default function TelaGraficosHACCP() {
               </div>
             )}
 
+            {/* Pendências por Estado (UF) — mesma métrica, agrupada por UF */}
+            {data?.pendencias_estado?.labels?.length > 0 && (
+              <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg">
+                <h2 className="text-lg font-bold mb-1 text-orange-400">Pendências por Estado</h2>
+                <p className="text-slate-500 text-sm mb-4">
+                  ({data.pendencias_estado.total_restaurantes} restaurantes com pendência
+                  {data.pendencias_estado.total_avaliados
+                    ? ` de ${data.pendencias_estado.total_avaliados} avaliados`
+                    : ''})
+                </p>
+                <div className="h-72">
+                  <Bar
+                    data={createChartConfig("Estado", data.pendencias_estado.labels, data.pendencias_estado.valores, "#fb923c")}
+                    options={verticalOptions}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Pendências por Consultor (existente) */}
             {data?.consultor?.labels?.length > 0 && (
               <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 shadow-lg">

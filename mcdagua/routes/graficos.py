@@ -25,7 +25,8 @@ from mcdagua.services.kpis import (
 from mcdagua.services.appcc_processor import (
     processar_microorganismos,
     processar_pendencias_appcc,
-    processar_regionais_appcc
+    processar_regionais_appcc,
+    processar_pendencias_por_estado
 )
 
 graficos_bp = Blueprint("graficos", __name__)
@@ -183,6 +184,13 @@ def haccp_graficos():
                 vazio = {"labels": [], "valores": [], "total_restaurantes": 0}
                 response_data["restaurantes_regional"] = vazio
                 response_data["restaurantes_estado"] = vazio
+
+            # 5. Pendências por Estado (espelha o gráfico de pendências por regional)
+            try:
+                response_data["pendencias_estado"] = processar_pendencias_por_estado(path_haccp)
+            except Exception as e:
+                print(f"⚠️ [HACCP] Erro pendências por estado: {e}")
+                response_data["pendencias_estado"] = {"labels": [], "valores": [], "total_restaurantes": 0}
         
         return jsonify(response_data)
     except Exception as e:

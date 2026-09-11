@@ -482,3 +482,65 @@ def processar_regionais_appcc(path_haccp, path_geral):
             "total_restaurantes": 0,
             "por_estado": {"labels": [], "valores": [], "total_restaurantes": 0},
         }
+
+
+def processar_pendencias_por_estado(path):
+    """
+    Grafico: Pendencias por Estado (UF).
+
+    Espelha o grafico "Pendencias por Regional", trocando o agrupamento pela UF.
+    Conta os restaurantes cuja coluna Pendencia traz alguma ocorrencia descrita --
+    "ok" e celula vazia ficam de fora (vazia = visita ainda sem coleta).
+
+    Diferente do grafico por Regional, que vem de uma tabela dinamica da aba
+    GRAFICO, este e calculado direto da aba GERAL: nao depende de alguem lembrar
+    de atualizar a dinamica antes de salvar a planilha.
+    """
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        ws = wb['GERAL']
+
+        linha_cab = _localizar_cabecalho(ws)
+        mapa = _mapa_colunas(ws, linha_cab)
+        col_uf = _coluna(mapa, "Estado", "UF")
+        col_pend = _coluna(mapa, "Pendencia")
+        if not col_uf or not col_pend:
+            print("[APPCC UF PEND] colunas Estado/Pendencia nao localizadas")
+            return {"labels": [], "valores": [], "total_restaurantes": 0}
+
+        contagem = Counter()
+        total = 0
+        for row in ws.iter_rows(min_row=linha_cab + 1, min_col=1,
+                                max_col=max(col_uf, col_pend)):
+            sigla = row[0].value
+            if not sigla or str(sigla).strip().upper() in ('', 'NAN', 'NONE'):
+                continue
+            pend = row[col_pend - 1].value
+            if not pend:
+                continue  # visita programada, ainda sem coleta
+            total += 1
+            if _normalizar(str(pend)) in ('ok', 'na'):
+                continue
+            uf = row[col_uf - 1].value
+            uf = str(uf).strip().upper() if uf else ''
+            contagem[uf if uf and uf not in ('NAN', 'NONE', '#N/A') else 'Sem UF'] += 1
+
+        wb.close()
+
+        labels = sorted(contagem, key=lambda u: (-contagem[u], u))
+        valores = [contagem[u] for u in labels]
+        com_pendencia = sum(valores)
+        print(f"[APPCC UF PEND] {com_pendencia} de {total} restaurantes com pendencia: "
+              + ", ".join(f"{l}={v}" for l, v in zip(labels, valores)))
+
+        return {
+            "labels": labels,
+            "valores": valores,
+            "total_restaurantes": com_pendencia,
+            "total_avaliados": total,
+        }
+    except Exception as e:
+        print(f"[APPCC UF PEND] Erro: {e}")
+        import traceback; traceback.print_exc()
+        return {"labels": [], "valores": [], "total_restaurantes": 0, "total_avaliados": 0}
