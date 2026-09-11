@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 import numpy as np
 import unicodedata
 
@@ -248,7 +249,9 @@ def processar_detalhes_parametros_por_mes(df):
             df_grupo = df.iloc[:, fatiador].copy()
             lista_graficos = []
             for col in df_grupo.columns:
-                param_nome = str(col).strip()
+                # O pandas renomeia colunas repetidas para 'Bac. Het.1', 'Coliformes.4'...
+                # e esse sufixo vazava para o titulo do grafico na tela.
+                param_nome = re.sub(r"\.\d+$", "", str(col).strip())
                 if "unnamed" in param_nome.lower(): continue
                 df_temp = pd.DataFrame({'Mes': col_mes, 'Valor': df_grupo[col].astype(str).str.lower().str.strip()})
                 df_temp = df_temp[df_temp['Valor'].isin(['ok', 'nok'])]

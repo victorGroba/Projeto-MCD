@@ -326,16 +326,22 @@ def _limpo(valor):
     return str(valor).strip() if valor is not None else ""
 
 
-def classificar_conformidade(nota_raw, pendencia_raw):
+def classificar_conformidade(nota_raw, pendencia_raw, usar_pendencia=True):
     """
     Classifica uma coleta como '100' (verde) ou 'abaixo' (vermelho).
 
     Regra:
       1. Se a coluna 'nota' estiver preenchida com um número -> 100% somente se nota == 1
          (aceita também 100 no lugar de 1).
-      2. Se a nota for 'na'/vazia (caso das recoletas, que não recebem nota),
-         cai para a coluna 'Pendência': 'ok' = 100%, qualquer pendência descrita = abaixo.
+      2. Se a nota for 'na'/vazia E `usar_pendencia`, cai para a coluna 'Pendência':
+         'ok' = 100%, qualquer pendência descrita = abaixo.
       3. Sem nenhuma das duas informações -> None (fica de fora do cálculo).
+
+    `usar_pendencia` existe porque a regra 2 foi pensada para as RECOLETAS, que
+    nunca recebem nota na planilha. Aplicada também à 1ª coleta, ela classificava
+    como aprovada uma visita que simplesmente ainda não tinha sido avaliada (nota
+    'na') só porque a pendência estava 'ok' — eram 24 casos em 2026. Para a 1ª
+    coleta vale a nota e só ela; sem nota, fica 'sem nota'.
     """
     nota = _limpo(nota_raw).lower().replace(",", ".")
     if nota not in VAZIOS:
@@ -346,6 +352,9 @@ def classificar_conformidade(nota_raw, pendencia_raw):
             return "100" if valor >= 0.999 else "abaixo"
         except ValueError:
             pass
+
+    if not usar_pendencia:
+        return None
 
     pend = _limpo(pendencia_raw).lower()
     if pend in VAZIOS:
@@ -436,7 +445,9 @@ def get_conformidade_dossie(df, ano=2026):
 
             nota_raw = linha[col_nota] if col_nota else ""
             pend_raw = linha[col_pend] if col_pend else ""
-            status = classificar_conformidade(nota_raw, pend_raw)
+            status = classificar_conformidade(
+                nota_raw, pend_raw, usar_pendencia=(grupo == "Recoleta")
+            )
 
             mes_num = linha['_mes_num']
             mes_num = int(mes_num) if pd.notna(mes_num) else 0
@@ -628,9 +639,9 @@ def get_coleta_recoleta(df, ano=2026):
         def _classificar_primeira(linha):
             if linha["_grupo"] != "Coleta":
                 return None
+            # 1ª visita: vale a nota e só ela
             st = classificar_conformidade(
-                linha[col_nota] if col_nota else "",
-                linha[col_pend] if col_pend else "",
+                linha[col_nota] if col_nota else "", "", usar_pendencia=False
             )
             if st == "100":
                 return "aprovado"

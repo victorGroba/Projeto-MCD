@@ -417,9 +417,9 @@ def processar_regionais_appcc(path_haccp, path_geral):
                 contagem_regional[mapa_sigla_regional[s]] += 1
             else:
                 sem_mapa.append(s)
-                # Fallback: usar estado como label
-                e = uf or 'DESCONHECIDO'
-                contagem_regional[f"({e})"] += 1
+                # Sem regional conhecida, agrupa num rotulo unico em vez de criar
+                # uma categoria "(SP)" que se confunde com uma regional de verdade
+                contagem_regional["Sem regional"] += 1
         
         wb_haccp.close()
         
