@@ -1561,12 +1561,16 @@ export default function TelaGraficos() {
     };
   };
 
-  // Rótulo por barra: % de aprovação na coleta, quantitativo na recoleta
+  // Total de 1ªs coletas do período — o percentual de cada resultado vai
+  // dentro da própria faixa, logo abaixo
+  const totalColetaNoPeriodo = (i) =>
+    (seriePeriodo.aprovado?.[i] || 0) + (seriePeriodo.reprovado?.[i] || 0);
+
+  // Rótulo por barra: quantidade no topo das duas (coleta e recoleta)
   const rotulosColetaRecoleta = {
     coleta: labelsPeriodo.map((_, i) => {
-      const ap = seriePeriodo.aprovado?.[i] || 0;
-      const rp = seriePeriodo.reprovado?.[i] || 0;
-      return ap + rp > 0 ? fmtPct((ap / (ap + rp)) * 100, 0) : null;
+      const total = totalColetaNoPeriodo(i);
+      return total > 0 ? fmtInt(total) : null;
     }),
     recoleta: labelsPeriodo.map((_, i) => {
       const v = seriePeriodo.recoleta?.[i] || 0;
@@ -1643,6 +1647,30 @@ export default function TelaGraficos() {
       });
     },
   });
+
+  // Percentual dentro de cada faixa da barra de coleta. Só na coleta: a de
+  // recoleta é um total único, sem divisão por resultado.
+  opcoesColetaRecoleta.plugins.datalabels = {
+    display: (ctx) => {
+      if (ctx.dataset.stack !== "coleta") return false;
+      const valor = Number(ctx.dataset.data[ctx.dataIndex]) || 0;
+      const total = totalColetaNoPeriodo(ctx.dataIndex);
+      if (!(valor > 0 && total > 0)) return false;
+      // Mede a faixa em pixels: proporção não basta, porque num mês de volume
+      // baixo até 79% da barra pode ser uma faixa fina demais para o texto.
+      const marca = ctx.chart.getDatasetMeta(ctx.datasetIndex)?.data?.[ctx.dataIndex];
+      const altura = marca ? Math.abs((marca.base ?? marca.y) - marca.y) : 0;
+      return altura >= 20;
+    },
+    color: "#0b1220",
+    font: { family: FONTE_VIZ, weight: "600", size: 12 },
+    anchor: "center",
+    align: "center",
+    formatter: (valor, ctx) => {
+      const total = totalColetaNoPeriodo(ctx.dataIndex);
+      return total > 0 ? `${Math.round((valor / total) * 100)}%` : "";
+    },
+  };
 
   // ====================================================================
   // COLETAS POR ESTADO (UF)
@@ -1926,9 +1954,10 @@ export default function TelaGraficos() {
               </div>
 
               <p className="text-xs text-slate-600 mt-4">
-                A barra de coleta mostra a proporção aprovado/reprovado da 1ª visita; a de recoleta,
-                apenas o quantitativo. Clique na barra de recoleta para ver o ranking de lojas, ou na
-                de coleta para o dossiê das primeiras visitas.
+                Acima de cada barra, a quantidade; dentro da barra de coleta, o percentual de
+                aprovadas e reprovadas na 1ª visita. A recoleta traz apenas o quantitativo.
+                Clique na barra de recoleta para ver o ranking de lojas, ou na de coleta para o
+                dossiê das primeiras visitas.
               </p>
             </div>
           </CollapsibleSection>
