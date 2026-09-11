@@ -38,9 +38,12 @@ const drawValuesPlugin = {
       const meta = chart.getDatasetMeta(i);
       if (meta.hidden) return;
 
+      // "Programado" e o total do periodo, nao uma fatia ao lado das outras:
+      // o percentual de cada status sai sobre ele. Somar as quatro barras
+      // inflava a base e achatava a pendencia (11 de 16 aparecia como 40,7%).
       let totalRegion = 0;
       if (isStatusChart) {
-        totalRegion = dataset.data.reduce((acc, val) => acc + (Number(val) || 0), 0);
+        totalRegion = Number(dataset.data[0]) || 0;
       }
 
       meta.data.forEach((element, index) => {
@@ -58,6 +61,12 @@ const drawValuesPlugin = {
 
           // Lógica de % para gráficos de Status
           if (isStatusChart) {
+            // A barra de Programado é a própria base — mostra só o número
+            if (index === 0) {
+              ctx.fillText(value.toString(), element.x, element.y - 3);
+              ctx.restore();
+              return;
+            }
             if (totalRegion > 0) {
               const pct = ((value / totalRegion) * 100).toFixed(1).replace('.', ',');
 
@@ -958,10 +967,14 @@ export default function TelaGraficos() {
           label: function (context) {
             const dataset = context.dataset;
             const value = dataset.data[context.dataIndex];
-            const total = dataset.data.reduce((acc, val) => acc + (Number(val) || 0), 0);
-            if (total > 0 && value > 0) {
-              const pct = ((value / total) * 100).toFixed(1).replace('.', ',');
-              return `${dataset.label}: ${value} (${pct}%)`;
+            // idem: a base e o Programado (primeira categoria), nao a soma
+            const programado = Number(dataset.data[0]) || 0;
+            if (context.dataIndex === 0) {
+              return `${dataset.label}: ${value} programado(s)`;
+            }
+            if (programado > 0 && value > 0) {
+              const pct = ((value / programado) * 100).toFixed(1).replace('.', ',');
+              return `${dataset.label}: ${value} de ${programado} (${pct}%)`;
             }
             return `${dataset.label}: ${value}`;
           }
